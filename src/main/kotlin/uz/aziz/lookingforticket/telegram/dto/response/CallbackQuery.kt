@@ -14,3 +14,6 @@ data class CallbackQuery(
     val data: String? = null
 )
 
+
+
+

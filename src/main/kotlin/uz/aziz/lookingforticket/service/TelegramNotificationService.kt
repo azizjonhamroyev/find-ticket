@@ -52,11 +52,11 @@ class TelegramNotificationService(
         return String.format("%,d", price)
     }
     
-    fun askUserToDeactivateRequest(chatId: Long, requestId: Long) {
+    fun askUserToDeactivateRequest(chatId: Long, requestId: Long, notificationCount: Int) {
         val message = """
             ⚠️ <b>Eslatma</b>
             
-            Sizning so'rovingiz #$requestId uchun 2 marta xabar yuborildi.
+            Sizning so'rovingiz #$requestId uchun $notificationCount marta xabar yuborildi.
             
             So'rovni deaktivatsiya qilishni xohlaysizmi?
             

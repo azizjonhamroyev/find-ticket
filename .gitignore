@@ -38,3 +38,43 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Logs ###
+logs/
+log/
+*.log
+*.log.*
+debug.log
+
+### Runtime files ###
+*.pid
+*.seed
+*.pid.lock
+
+### Environment files ###
+.env
+.env.*
+!.env.example
+
+### OS generated files ###
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+### JVM crash logs ###
+hs_err_pid*
+replay_pid*
+
+### Temporary files and directories ###
+.tmp/
+tmp/
+temp/

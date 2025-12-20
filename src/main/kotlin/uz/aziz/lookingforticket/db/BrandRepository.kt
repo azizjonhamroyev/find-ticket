@@ -9,3 +9,6 @@ interface BrandRepository : JpaRepository<BrandEntity, Long> {
     fun findByName(name: String): BrandEntity?
 }
 
+
+
+

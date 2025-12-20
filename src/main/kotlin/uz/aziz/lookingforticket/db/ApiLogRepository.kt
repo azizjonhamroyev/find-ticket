@@ -6,3 +6,6 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ApiLogRepository : JpaRepository<ApiLogEntity, Long>
 
+
+
+

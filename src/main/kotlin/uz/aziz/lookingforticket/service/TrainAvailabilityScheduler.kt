@@ -79,11 +79,12 @@ class TrainAvailabilityScheduler(
         if (!trains.isNullOrEmpty()) {
             logger.info("Found ${trains.size} available trains for request ${request.id}")
             
-            // Check current notification count before incrementing
-            val currentCount = request.notificationCount
-            
             // Increment notification count
             requestRepository.incrementNotificationCount(request.id)
+            
+            // Get the updated notification count
+            val updatedRequest = requestRepository.findById(request.id).orElse(null)
+            val newNotificationCount = updatedRequest?.notificationCount ?: request.notificationCount + 1
             
             // Send notification to user
             telegramNotificationService.notifyUserAboutAvailableTrains(
@@ -95,12 +96,13 @@ class TrainAvailabilityScheduler(
             // Update last notified timestamp
             requestRepository.updateLastNotifiedAt(request.id, now)
             
-            // Check if notification count reached 2 (was 1, now becomes 2), then ask user to deactivate
+            // Ask user to deactivate every 2 notifications (2, 4, 6, 8, etc.)
             // If user ignores, request stays active. If user clicks Yes, it gets deactivated.
-            if (currentCount == 1) {
+            if (newNotificationCount % 2 == 0) {
                 telegramNotificationService.askUserToDeactivateRequest(
                     chatId = request.user.chatId,
-                    requestId = request.id
+                    requestId = request.id,
+                    notificationCount = newNotificationCount
                 )
             }
         } else {

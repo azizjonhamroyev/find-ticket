@@ -17,3 +17,6 @@ interface RequestBrandRepository : JpaRepository<RequestBrandEntity, Long> {
     fun deleteByRequestId(@Param("requestId") requestId: Long)
 }
 
+
+
+
