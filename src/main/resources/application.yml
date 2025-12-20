@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: looking-for-ticket
+  datasource:
+    url: jdbc:postgresql://localhost:5432/looking_for_ticket
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+railway:
+  uz:
+    base-url: https://e-ticket.railway.uz
+    xsrf-token: 1462ac21-5d25-406c-999f-11fa802e853f # Set your XSRF token here
+    cookie: _ga=GA1.1.1376462485.1765610115; _ga_R5LGX7P1YR=GS2.1.s1765859803$o2$g1$t1765861353$j10$l0$h0; _ga_K4H2SZ7MWK=GS2.1.s1765861360$o1$g0$t1765861360$j60$l0$h0; XSRF-TOKEN=1462ac21-5d25-406c-999f-11fa802e853f; __stripe_mid=ba537cb8-fb59-4a9b-8ed8-55942e3ad41643ffbb; __stripe_sid=7f33a309-1e43-4bd3-a411-2107598c8202572a01 # Set your cookie here if needed
+
+telegram:
+  bot-token: 7971948156:AAEc8i4owufe5mKszbwjIB7sGMCAHP4EYQA # Set your Telegram bot token here
+  bot-username: watcher_ticket_bot # Set your Telegram bot username here
+  # No webhook configuration needed - using polling instead (works on localhost)
+
+scheduler:
+  check-interval-minutes: 1
+
+logging:
+  level:
+    uz.aziz.lookingforticket: INFO
+    org.springframework.web: WARN
+    org.hibernate: WARN
