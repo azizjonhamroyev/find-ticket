@@ -3,16 +3,20 @@ package uz.aziz.lookingforticket.railway
 import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import org.springframework.web.reactive.function.client.bodyToMono
 import reactor.core.publisher.Mono
+import reactor.util.retry.Retry
 import uz.aziz.lookingforticket.config.RailwayUzProperties
 import uz.aziz.lookingforticket.db.ApiLogEntity
 import uz.aziz.lookingforticket.db.ApiLogRepository
 import uz.aziz.lookingforticket.railway.dto.request.TrainAvailabilityRequest
 import uz.aziz.lookingforticket.railway.dto.response.*
 import uz.aziz.lookingforticket.railway.model.TrainInfo
+import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -92,6 +96,32 @@ class RailwayApiService(
             .bodyValue(request)
             .retrieve()
             .bodyToMono(TrainAvailabilityResponse::class.java)
+            .retryWhen(
+                Retry.backoff(railwayProperties.maxRetries.toLong(), Duration.ofMillis(railwayProperties.initialRetryDelayMs))
+                    .maxBackoff(Duration.ofMillis(railwayProperties.maxRetryDelayMs))
+                    .filter { throwable ->
+                        // Only retry on 429 (Too Many Requests) errors
+                        if (throwable is WebClientResponseException) {
+                            throwable.statusCode == HttpStatus.TOO_MANY_REQUESTS
+                        } else {
+                            false
+                        }
+                    }
+                    .doBeforeRetry { retrySignal ->
+                        val attempt = retrySignal.totalRetries() + 1
+                        // Calculate expected delay: exponential backoff (min(initialDelay * 2^attempt, maxDelay))
+                        val expectedDelayMs = minOf(
+                            railwayProperties.initialRetryDelayMs * (1L shl attempt.toInt()),
+                            railwayProperties.maxRetryDelayMs
+                        )
+                        val expectedDelaySeconds = expectedDelayMs / 1000.0
+                        logger.warn(
+                            "Rate limited (429). Retrying attempt $attempt/${railwayProperties.maxRetries} " +
+                            "(expected delay: ${expectedDelaySeconds}s). " +
+                            "Request: $stationFrom -> $stationTo on $dateInfo"
+                        )
+                    }
+            )
             .doOnSuccess { response ->
                 val executionTime = System.currentTimeMillis() - startTime
                 val responseBody = try {
@@ -113,6 +143,12 @@ class RailwayApiService(
             }
             .doOnError { error ->
                 val executionTime = System.currentTimeMillis() - startTime
+                val statusCode = if (error is WebClientResponseException) {
+                    error.statusCode.value()
+                } else {
+                    null
+                }
+                
                 logger.error("Error checking train availability: ${error.message}", error)
                 
                 saveLog(
@@ -120,14 +156,23 @@ class RailwayApiService(
                     method = "POST",
                     requestHeaders = requestHeaders,
                     requestBody = requestBody,
-                    responseStatus = null,
+                    responseStatus = statusCode,
                     responseBody = null,
                     errorMessage = error.message,
                     isSuccess = false,
                     executionTimeMs = executionTime
                 )
             }
-            .onErrorResume { Mono.empty() }
+            .onErrorResume { error ->
+                // If it's a 429 after all retries, log and return empty
+                if (error is WebClientResponseException && error.statusCode == HttpStatus.TOO_MANY_REQUESTS) {
+                    logger.error(
+                        "Rate limited (429) after ${railwayProperties.maxRetries} retries. " +
+                        "Skipping request: $stationFrom -> $stationTo on $dateInfo"
+                    )
+                }
+                Mono.empty()
+            }
     }
     
     @Transactional
@@ -181,16 +226,28 @@ class RailwayApiService(
         minSeats: Int = 1,
         brandNames: List<String>? = null
     ): Mono<List<TrainInfo>> {
-        // Make separate API requests for each date in the range
+        // Make separate API requests for each date in the range with delays between requests
         var currentDate = fromDate
         var combinedMono: Mono<List<TrainInfo>> = Mono.just(emptyList())
+        var isFirstRequest = true
         
         while (!currentDate.isAfter(toDate)) {
-            val dateMono = checkTrainAvailability(stationFrom, stationTo, currentDate)
-                .map { response ->
-                    extractAvailableTrains(response, minSeats, brandNames)
-                }
-                .defaultIfEmpty(emptyList())
+            val dateMono = if (isFirstRequest) {
+                // No delay for the first request
+                checkTrainAvailability(stationFrom, stationTo, currentDate)
+                    .map { response ->
+                        extractAvailableTrains(response, minSeats, brandNames)
+                    }
+                    .defaultIfEmpty(emptyList())
+            } else {
+                // Add delay before subsequent requests to avoid rate limiting
+                Mono.delay(Duration.ofMillis(railwayProperties.delayBetweenRequestsMs))
+                    .then(checkTrainAvailability(stationFrom, stationTo, currentDate))
+                    .map { response ->
+                        extractAvailableTrains(response, minSeats, brandNames)
+                    }
+                    .defaultIfEmpty(emptyList())
+            }
             
             combinedMono = combinedMono.flatMap { existingTrains ->
                 dateMono.map { newTrains ->
@@ -199,6 +256,7 @@ class RailwayApiService(
             }
             
             currentDate = currentDate.plusDays(1)
+            isFirstRequest = false
         }
         
         return combinedMono

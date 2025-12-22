@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component
 @Component
 @ConfigurationProperties(prefix = "scheduler")
 data class SchedulerProperties(
-    var checkIntervalMinutes: Long = 1
+    var checkIntervalMinutes: Long = 1,
+    var delayBetweenRequestsMs: Long = 3000 // 3 seconds delay between processing different requests
 )
 

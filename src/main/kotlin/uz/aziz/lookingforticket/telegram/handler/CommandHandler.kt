@@ -35,7 +35,7 @@ class CommandHandler(
         
         if (existingUser != null) {
             logger.info("User with chatId $chatId already exists")
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = """
                     👋 <b>Assalomu alaykum!</b>
@@ -57,7 +57,7 @@ class CommandHandler(
         val user = userRepository.findByChatId(chatId)
         
         if (user == null) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "Iltimos, avval /start buyrug'ini bajaring."
             )
@@ -67,7 +67,7 @@ class CommandHandler(
         val activeRequests = requestRepository.findByUserIdAndIsActiveTrue(user.id)
         
         if (activeRequests.isEmpty()) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = """
                     📋 <b>Mening so'rovlarim</b>
@@ -123,7 +123,7 @@ class CommandHandler(
             }
         }
         
-        telegramBot.sendMessage(
+        telegramBot.sendMessageBlocking(
             chatId = chatId,
             text = messageText,
             parseMode = "HTML"
@@ -139,7 +139,7 @@ class CommandHandler(
         val user = userRepository.findByChatId(chatId)
         
         if (user == null) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "Iltimos, avval /start buyrug'ini bajaring."
             )
@@ -166,7 +166,7 @@ class CommandHandler(
             }
         }
         
-        telegramBot.sendMessageWithButtons(
+        telegramBot.sendMessageWithButtonsBlocking(
             chatId = chatId,
             text = """
                 📝 <b>Yangi so'rov yaratish</b>
@@ -182,7 +182,7 @@ class CommandHandler(
     fun handleStationFromSelection(stationId: String, chatId: Long): String? {
         val station = stationRepository.findById(stationId).orElse(null)
         if (station == null) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Noto'g'ri stantsiya. Iltimos, qayta tanlang."
             )
@@ -210,7 +210,7 @@ class CommandHandler(
             }
         }
         
-        telegramBot.sendMessageWithButtons(
+        telegramBot.sendMessageWithButtonsBlocking(
             chatId = chatId,
             text = """
                 ✅ Jo'nash stantsiyasi: <b>${station.name}</b>
@@ -228,7 +228,7 @@ class CommandHandler(
     fun handleStationToSelection(stationId: String, stationFromId: String, chatId: Long): String? {
         val station = stationRepository.findById(stationId).orElse(null)
         if (station == null) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Noto'g'ri stantsiya. Iltimos, qayta tanlang."
             )
@@ -236,7 +236,7 @@ class CommandHandler(
         }
         
         if (station.id == stationFromId) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Jo'nash va yetib borish stantsiyalari bir xil bo'lishi mumkin emas. Iltimos, boshqa stantsiya tanlang."
             )
@@ -245,7 +245,7 @@ class CommandHandler(
         
         val stationFrom = stationRepository.findById(stationFromId).orElse(null)!!
         
-        telegramBot.sendMessage(
+        telegramBot.sendMessageBlocking(
             chatId = chatId,
             text = """
                 ✅ Yetib borish stantsiyasi: <b>${station.name}</b>
@@ -266,7 +266,7 @@ class CommandHandler(
         val fromDate = try {
             LocalDate.parse(text, dateFormatter)
         } catch (e: DateTimeParseException) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY formatida kiriting (Masalan: 31.12.2025):"
             )
@@ -274,7 +274,7 @@ class CommandHandler(
         }
         
         if (fromDate.isBefore(LocalDate.now())) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, kelajak sanasini kiriting:"
             )
@@ -284,7 +284,7 @@ class CommandHandler(
         // Save fromDate to state
         stateManager.updateFromDate(chatId, text)
         
-        telegramBot.sendMessage(
+        telegramBot.sendMessageBlocking(
             chatId = chatId,
             text = """
                 ✅ Boshlanish sanasi: <b>${fromDate.format(dateFormatter)}</b>
@@ -305,7 +305,7 @@ class CommandHandler(
         val toDate = try {
             LocalDate.parse(text, dateFormatter)
         } catch (e: DateTimeParseException) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY formatida kiriting (Masalan: 05.01.2026):"
             )
@@ -315,7 +315,7 @@ class CommandHandler(
         val fromDate = try {
             LocalDate.parse(fromDateStr, dateFormatter)
         } catch (e: DateTimeParseException) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang."
             )
@@ -323,7 +323,7 @@ class CommandHandler(
         }
         
         if (toDate.isBefore(fromDate)) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Tugash sanasi boshlanish sanasidan oldin bo'lishi mumkin emas. Iltimos, qayta kiriting:"
             )
@@ -331,7 +331,7 @@ class CommandHandler(
         }
         
         if (toDate.isBefore(LocalDate.now())) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, kelajak sanasini kiriting:"
             )
@@ -388,7 +388,7 @@ class CommandHandler(
             selectedBrands.joinToString(", ") { it.displayName }
         }
         
-        telegramBot.sendMessageWithButtons(
+        telegramBot.sendMessageWithButtonsBlocking(
             chatId = chatId,
             text = """
                 ✅ Tugash sanasi: <b>${requestState.toDate}</b>
@@ -426,14 +426,14 @@ class CommandHandler(
         val fromDate = try {
             LocalDate.parse(fromDateStr, dateFormatter)
         } catch (e: Exception) {
-            telegramBot.sendMessage(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
+            telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
         
         val toDate = try {
             LocalDate.parse(toDateStr, dateFormatter)
         } catch (e: Exception) {
-            telegramBot.sendMessage(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
+            telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
         
@@ -481,7 +481,7 @@ class CommandHandler(
             brands.joinToString(", ") { it.displayName }
         }
         
-        telegramBot.sendMessage(
+        telegramBot.sendMessageBlocking(
             chatId = chatId,
             text = """
                 ✅ <b>So'rov muvaffaqiyatli yaratildi!</b>
@@ -505,7 +505,7 @@ class CommandHandler(
     fun handleKeepRequestActive(requestId: Long, chatId: Long, keepActive: Boolean) {
         val request = requestRepository.findById(requestId).orElse(null)
         if (request == null || request.user.chatId != chatId) {
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ So'rov topilmadi."
             )
@@ -516,7 +516,7 @@ class CommandHandler(
             // User wants to keep it active - reactivate and reset notification count
             requestRepository.updateIsActive(requestId, true)
             requestRepository.resetNotificationCount(requestId)
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = """
                     ✅ So'rov #$requestId faollashtirildi.
@@ -528,7 +528,7 @@ class CommandHandler(
         } else {
             // User selected No - ensure it's inactive
             requestRepository.updateIsActive(requestId, false)
-            telegramBot.sendMessage(
+            telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = """
                     ✅ So'rov #$requestId deaktivatsiya qilindi.
@@ -552,7 +552,7 @@ class CommandHandler(
         val savedUser = userRepository.save(newUser)
         logger.info("Created new user with id ${savedUser.id} and chatId ${chat.id}")
         
-        telegramBot.sendMessage(
+        telegramBot.sendMessageBlocking(
             chatId = chat.id,
             text = """
                 👋 <b>Assalomu alaykum!</b>

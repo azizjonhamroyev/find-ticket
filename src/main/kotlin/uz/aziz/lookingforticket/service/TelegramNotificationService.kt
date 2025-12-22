@@ -2,24 +2,42 @@ package uz.aziz.lookingforticket.service
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import reactor.core.publisher.Mono
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import uz.aziz.lookingforticket.telegram.TelegramBot
 
 @Service
 class TelegramNotificationService(
-    private val telegramBot: TelegramBot
+    private val telegramBot: TelegramBot,
+    private val messageLogService: MessageLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     
-    fun notifyUserAboutAvailableTrains(chatId: Long, trains: List<TrainInfo>, requestId: Long) {
+    fun notifyUserAboutAvailableTrains(chatId: Long, trains: List<TrainInfo>, requestId: Long): Mono<Unit> {
         if (trains.isEmpty()) {
             logger.debug("No trains to notify for request $requestId")
-            return
+            return Mono.empty()
         }
         
         val message = buildTrainAvailabilityMessage(trains, requestId)
         
-        telegramBot.sendMessage(chatId, message, "HTML")
+        return telegramBot.sendMessage(chatId, message, "HTML")
+            .flatMap { result ->
+                // Log the message
+                Mono.fromCallable {
+                    messageLogService.logMessage(
+                        chatId = chatId,
+                        messageText = message,
+                        messageType = "TRAIN_AVAILABILITY",
+                        requestId = requestId,
+                        hasButtons = false,
+                        isSuccess = result.isSuccess,
+                        errorMessage = result.errorMessage,
+                        telegramMessageId = result.telegramMessageId
+                    )
+                }
+                .thenReturn(Unit)
+            }
     }
     
     private fun buildTrainAvailabilityMessage(trains: List<TrainInfo>, requestId: Long): String {
@@ -52,7 +70,7 @@ class TelegramNotificationService(
         return String.format("%,d", price)
     }
     
-    fun askUserToDeactivateRequest(chatId: Long, requestId: Long, notificationCount: Int) {
+    fun askUserToDeactivateRequest(chatId: Long, requestId: Long, notificationCount: Int): Mono<Unit> {
         val message = """
             ⚠️ <b>Eslatma</b>
             
@@ -63,7 +81,7 @@ class TelegramNotificationService(
             (Agar javob bermasangiz, so'rov faol bo'lib qoladi)
         """.trimIndent()
         
-        telegramBot.sendMessageWithButtons(
+        return telegramBot.sendMessageWithButtons(
             chatId = chatId,
             text = message,
             buttons = listOf(
@@ -73,6 +91,22 @@ class TelegramNotificationService(
                 listOf("deactivate_request_$requestId")
             )
         )
+        .flatMap { result ->
+            // Log the message
+            Mono.fromCallable {
+                messageLogService.logMessage(
+                    chatId = chatId,
+                    messageText = message,
+                    messageType = "DEACTIVATE_REQUEST",
+                    requestId = requestId,
+                    hasButtons = true,
+                    isSuccess = result.isSuccess,
+                    errorMessage = result.errorMessage,
+                    telegramMessageId = result.telegramMessageId
+                )
+            }
+            .thenReturn(Unit)
+        }
     }
 }
 
