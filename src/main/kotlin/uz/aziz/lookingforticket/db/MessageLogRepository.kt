@@ -25,3 +25,4 @@ interface MessageLogRepository : JpaRepository<MessageLogEntity, Long> {
 }
 
 
+
