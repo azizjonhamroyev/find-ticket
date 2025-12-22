@@ -134,7 +134,8 @@ class TrainAvailabilityScheduler(
                     brandNames = brandNames
                 )
                 .timeout(Duration.ofSeconds(30))
-                .map { trains -> Pair(trains, brandNames) }
+                .map { trains -> Pair(trains, brandNames)
+                }
                 .defaultIfEmpty(Pair(emptyList(), brandNames))
             }
         }
