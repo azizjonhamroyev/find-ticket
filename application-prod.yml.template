@@ -1,0 +1,45 @@
+# Production Configuration Template
+# Copy this file to src/main/resources/application-prod.yml
+# and fill in your actual values
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/looking_for_ticket
+    username: lookingforticket
+    password: CHANGE_THIS_PASSWORD
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+railway:
+  uz:
+    base-url: https://e-ticket.railway.uz
+    xsrf-token: CHANGE_THIS_XSRF_TOKEN
+    cookie: CHANGE_THIS_COOKIE
+
+telegram:
+  bot-token: CHANGE_THIS_BOT_TOKEN
+  bot-username: CHANGE_THIS_BOT_USERNAME
+
+scheduler:
+  check-interval-minutes: 1
+
+logging:
+  level:
+    uz.aziz.lookingforticket: INFO
+    org.springframework.web: WARN
+    org.hibernate: WARN
+  file:
+    name: /opt/looking-for-ticket/logs/application.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+
+
+
