@@ -153,16 +153,15 @@ class TelegramPollingService(
                     val stationFromId = parts[0]
                     val stationToId = parts[1]
                     val allBrands = data.contains("_all_")
-                    if (commandHandler.handleFinishBrandSelection(
-                            stationFromId,
-                            stationToId,
-                            chatId,
-                            user.id,
-                            allBrands
-                        )
-                    ) {
-                        stateManager.clearState(chatId)
-                    }
+                    // Don't clear state here - handleFinishBrandSelection sets it to WAITING_NUMBER_OF_PEOPLE
+                    // State will be cleared after the user enters the number of people
+                    commandHandler.handleFinishBrandSelection(
+                        stationFromId,
+                        stationToId,
+                        chatId,
+                        user.id,
+                        allBrands
+                    )
                 }
                 answerCallbackQuery(callbackQuery.id)
             }
@@ -230,6 +229,22 @@ class TelegramPollingService(
                     )
                 ) {
                     stateManager.setState(chatId, UserState.WAITING_BRAND)
+                }
+            }
+            state == UserState.WAITING_NUMBER_OF_PEOPLE -> {
+                logger.info("Handling number of people input for chat $chatId")
+                val requestState = stateManager.getRequestState(chatId)
+                if (commandHandler.handleNumberOfPeopleInput(
+                        message,
+                        user?.id ?: 0L,
+                        requestState.stationFromId ?: "",
+                        requestState.stationToId ?: ""
+                    )
+                ) {
+                    logger.info("Successfully processed number of people input, clearing state for chat $chatId")
+                    stateManager.clearState(chatId)
+                } else {
+                    logger.warn("Failed to process number of people input for chat $chatId")
                 }
             }
             else -> {

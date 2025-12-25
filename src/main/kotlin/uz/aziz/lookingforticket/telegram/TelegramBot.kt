@@ -38,7 +38,7 @@ class TelegramBot(
             .bodyToMono(TelegramApiResponse::class.java)
             .map { response ->
                 if (response.ok == true) {
-                    val messageId = response.result?.messageId
+                    val messageId = response.getMessageId()
                     logger.info("Successfully sent message to chat $chatId (messageId: $messageId)")
                     SendMessageResult(
                         isSuccess = true,
@@ -97,7 +97,7 @@ class TelegramBot(
             .bodyToMono(TelegramApiResponse::class.java)
             .map { response ->
                 if (response.ok == true) {
-                    val messageId = response.result?.messageId
+                    val messageId = response.getMessageId()
                     logger.info("Successfully sent message with buttons to chat $chatId (messageId: $messageId)")
                     SendMessageResult(
                         isSuccess = true,

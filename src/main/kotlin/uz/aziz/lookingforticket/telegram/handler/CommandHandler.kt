@@ -111,7 +111,7 @@ class CommandHandler(
                 append("📍 ${request.stationFrom.name} → ${request.stationTo.name}\n")
                 append("📅 ${request.fromDate.format(dateFormatter)} - ${request.toDate.format(dateFormatter)}\n")
                 append("🚂 Brendlar: $brandText\n")
-                append("💺 Minimal o'rindiqlar: ${request.minSeats}\n")
+                append("👥 Kishi soni: ${request.minSeats}\n")
                 append("📊 Xabarlar soni: ${request.notificationCount}/2\n")
                 
                 if (lastCheckedAt != null) {
@@ -422,6 +422,61 @@ class CommandHandler(
     }
     
     fun handleFinishBrandSelection(stationFromId: String, stationToId: String, chatId: Long, userId: Long, allBrands: Boolean = false): Boolean {
+        logger.info("Finishing brand selection for chat $chatId, asking for number of people")
+        // Ask for number of people instead of creating request immediately
+        telegramBot.sendMessageBlocking(
+            chatId = chatId,
+            text = """
+                ✅ Brendlar tanlandi!
+                
+                👥 Iltimos, necha kishi uchun chipta kerakligini kiriting:
+                (Masalan: 1, 2, 3, ...)
+            """.trimIndent(),
+            parseMode = "HTML"
+        )
+        
+        // Set state to wait for number of people
+        stateManager.setState(chatId, uz.aziz.lookingforticket.telegram.state.UserState.WAITING_NUMBER_OF_PEOPLE)
+        logger.info("Set state to WAITING_NUMBER_OF_PEOPLE for chat $chatId")
+        
+        return true
+    }
+    
+    fun handleNumberOfPeopleInput(message: Message, userId: Long, stationFromId: String, stationToId: String): Boolean {
+        val chatId = message.chat.id
+        val text = message.text?.trim() ?: return false
+        
+        logger.info("Processing number of people input for chat $chatId: '$text'")
+        
+        val numberOfPeople = try {
+            val num = text.toInt()
+            if (num < 1) {
+                telegramBot.sendMessageBlocking(
+                    chatId = chatId,
+                    text = "❌ Kishi soni kamida 1 bo'lishi kerak. Iltimos, qayta kiriting:"
+                )
+                return false
+            }
+            if (num > 10) {
+                telegramBot.sendMessageBlocking(
+                    chatId = chatId,
+                    text = "❌ Kishi soni 10 dan oshmasligi kerak. Iltimos, qayta kiriting:"
+                )
+                return false
+            }
+            num
+        } catch (e: NumberFormatException) {
+            telegramBot.sendMessageBlocking(
+                chatId = chatId,
+                text = "❌ Noto'g'ri format. Iltimos, raqam kiriting (Masalan: 1, 2, 3):"
+            )
+            return false
+        }
+        
+        // Save number of people to state
+        stateManager.updateNumberOfPeople(chatId, numberOfPeople)
+        
+        // Now create the request
         val user = userRepository.findById(userId).orElse(null) ?: return false
         val stationFrom = stationRepository.findById(stationFromId).orElse(null) ?: return false
         val stationTo = stationRepository.findById(stationToId).orElse(null) ?: return false
@@ -445,6 +500,9 @@ class CommandHandler(
             return false
         }
         
+        // Get selected brands
+        val selectedBrandIds = requestState.selectedBrandIds
+        
         val request = RequestEntity(
             user = user,
             stationFrom = stationFrom,
@@ -453,19 +511,13 @@ class CommandHandler(
             toDate = toDate,
             createdAt = LocalDateTime.now(),
             isActive = true,
-            minSeats = 1,
+            minSeats = numberOfPeople, // Use number of people as minSeats
             notificationCount = 0
         )
         
         val savedRequest = requestRepository.save(request)
         
         // Save selected brands
-        val selectedBrandIds = if (allBrands) {
-            emptySet<Long>()
-        } else {
-            requestState.selectedBrandIds
-        }
-        
         if (selectedBrandIds.isNotEmpty()) {
             val brands = brandRepository.findAllById(selectedBrandIds)
             brands.forEach { brand ->
@@ -483,7 +535,7 @@ class CommandHandler(
             brandRepository.findAllById(selectedBrandIds)
         }
         
-        val brandText = if (allBrands || brands.isEmpty()) {
+        val brandText = if (brands.isEmpty()) {
             "Barcha brendlar"
         } else {
             brands.joinToString(", ") { it.displayName }
@@ -498,15 +550,16 @@ class CommandHandler(
                 📍 ${stationFrom.name} → ${stationTo.name}
                 📅 ${fromDate.format(dateFormatter)} - ${toDate.format(dateFormatter)}
                 🚂 Brendlar: $brandText
+                👥 Kishi soni: <b>$numberOfPeople</b>
                 
-                Endi biz sizga bo'sh o'rindiqlar mavjud bo'lganda xabar beramiz!
+                Endi biz sizga kamida <b>$numberOfPeople</b> ta bo'sh o'rindiq mavjud bo'lganda xabar beramiz!
                 
                 /my_requests - Mening so'rovlarim
             """.trimIndent(),
             parseMode = "HTML"
         )
         
-        logger.info("Created new request ${savedRequest.id} for user ${user.id}")
+        logger.info("Created new request ${savedRequest.id} for user ${user.id} with $numberOfPeople people")
         return true
     }
     

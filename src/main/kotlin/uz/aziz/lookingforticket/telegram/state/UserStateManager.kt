@@ -60,5 +60,10 @@ class UserStateManager {
         val current = getRequestState(userId)
         setRequestState(userId, current.copy(toDate = toDate))
     }
+    
+    fun updateNumberOfPeople(userId: Long, numberOfPeople: Int) {
+        val current = getRequestState(userId)
+        setRequestState(userId, current.copy(numberOfPeople = numberOfPeople))
+    }
 }
 
