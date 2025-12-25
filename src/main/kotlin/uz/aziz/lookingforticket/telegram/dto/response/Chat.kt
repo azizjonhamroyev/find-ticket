@@ -10,5 +10,6 @@ data class Chat(
     val firstName: String? = null,
     @JsonProperty("last_name")
     val lastName: String? = null
+
 )
 
