@@ -1,8 +1,10 @@
-package uz.aziz.lookingforticket.db
+package uz.aziz.lookingforticket.db.init
 
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import uz.aziz.lookingforticket.db.entity.BrandEntity
+import uz.aziz.lookingforticket.db.repo.BrandRepository
 
 @Component
 class BrandInitializer(

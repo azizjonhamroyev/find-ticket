@@ -1,14 +1,14 @@
 package uz.aziz.lookingforticket.service
 
-import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import uz.aziz.lookingforticket.config.SchedulerProperties
-import uz.aziz.lookingforticket.db.RequestBrandRepository
-import uz.aziz.lookingforticket.db.RequestRepository
+import uz.aziz.lookingforticket.db.repo.RequestBrandRepository
+import uz.aziz.lookingforticket.db.repo.RequestRepository
+import uz.aziz.lookingforticket.db.entity.RequestEntity
 import uz.aziz.lookingforticket.railway.RailwayApiService
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import java.time.Duration
@@ -64,7 +64,7 @@ class TrainAvailabilityScheduler(
             )
     }
     
-    private fun checkRequestAsync(request: uz.aziz.lookingforticket.db.RequestEntity): Mono<Unit> {
+    private fun checkRequestAsync(request: RequestEntity): Mono<Unit> {
         return Mono.fromCallable {
             val currentDate = LocalDate.now()
             

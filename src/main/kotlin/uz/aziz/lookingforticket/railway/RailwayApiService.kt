@@ -7,18 +7,16 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
-import org.springframework.web.reactive.function.client.bodyToMono
 import reactor.core.publisher.Mono
 import reactor.util.retry.Retry
 import uz.aziz.lookingforticket.config.RailwayUzProperties
-import uz.aziz.lookingforticket.db.ApiLogEntity
-import uz.aziz.lookingforticket.db.ApiLogRepository
+import uz.aziz.lookingforticket.db.entity.ApiLogEntity
+import uz.aziz.lookingforticket.db.repo.ApiLogRepository
 import uz.aziz.lookingforticket.railway.dto.request.TrainAvailabilityRequest
 import uz.aziz.lookingforticket.railway.dto.response.*
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import java.time.Duration
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 @Service
 class RailwayApiService(

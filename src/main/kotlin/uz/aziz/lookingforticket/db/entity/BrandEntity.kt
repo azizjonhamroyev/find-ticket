@@ -1,4 +1,4 @@
-package uz.aziz.lookingforticket.db
+package uz.aziz.lookingforticket.db.entity
 
 import jakarta.persistence.*
 

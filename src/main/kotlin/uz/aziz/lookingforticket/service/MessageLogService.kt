@@ -3,8 +3,8 @@ package uz.aziz.lookingforticket.service
 import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import uz.aziz.lookingforticket.db.MessageLogEntity
-import uz.aziz.lookingforticket.db.MessageLogRepository
+import uz.aziz.lookingforticket.db.entity.MessageLogEntity
+import uz.aziz.lookingforticket.db.repo.MessageLogRepository
 import java.time.LocalDateTime
 
 @Service
@@ -44,6 +44,7 @@ class MessageLogService(
         }
     }
 }
+
 
 
 

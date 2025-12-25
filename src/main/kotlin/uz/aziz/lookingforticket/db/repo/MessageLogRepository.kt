@@ -1,9 +1,10 @@
-package uz.aziz.lookingforticket.db
+package uz.aziz.lookingforticket.db.repo
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import uz.aziz.lookingforticket.db.entity.MessageLogEntity
 
 @Repository
 interface MessageLogRepository : JpaRepository<MessageLogEntity, Long> {

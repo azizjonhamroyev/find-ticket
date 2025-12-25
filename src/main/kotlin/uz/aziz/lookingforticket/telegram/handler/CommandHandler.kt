@@ -2,7 +2,15 @@ package uz.aziz.lookingforticket.telegram.handler
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
-import uz.aziz.lookingforticket.db.*
+import uz.aziz.lookingforticket.db.entity.BrandEntity
+import uz.aziz.lookingforticket.db.entity.RequestBrandEntity
+import uz.aziz.lookingforticket.db.entity.RequestEntity
+import uz.aziz.lookingforticket.db.entity.UserEntity
+import uz.aziz.lookingforticket.db.repo.BrandRepository
+import uz.aziz.lookingforticket.db.repo.RequestBrandRepository
+import uz.aziz.lookingforticket.db.repo.RequestRepository
+import uz.aziz.lookingforticket.db.repo.StationRepository
+import uz.aziz.lookingforticket.db.repo.UserRepository
 import uz.aziz.lookingforticket.telegram.TelegramBot
 import uz.aziz.lookingforticket.telegram.dto.response.Message
 import uz.aziz.lookingforticket.telegram.state.UserStateManager
@@ -16,8 +24,8 @@ class CommandHandler(
     private val userRepository: UserRepository,
     private val stationRepository: StationRepository,
     private val requestRepository: RequestRepository,
-    private val brandRepository: uz.aziz.lookingforticket.db.BrandRepository,
-    private val requestBrandRepository: uz.aziz.lookingforticket.db.RequestBrandRepository,
+    private val brandRepository: BrandRepository,
+    private val requestBrandRepository: RequestBrandRepository,
     private val telegramBot: TelegramBot,
     private val stateManager: UserStateManager
 ) {
@@ -425,14 +433,14 @@ class CommandHandler(
         // Parse dates
         val fromDate = try {
             LocalDate.parse(fromDateStr, dateFormatter)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
         
         val toDate = try {
             LocalDate.parse(toDateStr, dateFormatter)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
@@ -461,7 +469,7 @@ class CommandHandler(
         if (selectedBrandIds.isNotEmpty()) {
             val brands = brandRepository.findAllById(selectedBrandIds)
             brands.forEach { brand ->
-                val requestBrand = uz.aziz.lookingforticket.db.RequestBrandEntity(
+                val requestBrand = RequestBrandEntity(
                     request = savedRequest,
                     brand = brand
                 )
@@ -470,7 +478,7 @@ class CommandHandler(
         }
         
         val brands = if (selectedBrandIds.isEmpty()) {
-            emptyList<uz.aziz.lookingforticket.db.BrandEntity>()
+            emptyList<BrandEntity>()
         } else {
             brandRepository.findAllById(selectedBrandIds)
         }

@@ -7,12 +7,11 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import uz.aziz.lookingforticket.config.TelegramProperties
-import uz.aziz.lookingforticket.db.UserRepository
+import uz.aziz.lookingforticket.db.repo.UserRepository
 import uz.aziz.lookingforticket.telegram.dto.response.*
 import uz.aziz.lookingforticket.telegram.handler.CommandHandler
 import uz.aziz.lookingforticket.telegram.state.UserState
 import uz.aziz.lookingforticket.telegram.state.UserStateManager
-import java.time.LocalDateTime
 
 @Service
 class TelegramPollingService(

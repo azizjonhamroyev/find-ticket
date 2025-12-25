@@ -78,3 +78,8 @@ replay_pid*
 .tmp/
 tmp/
 temp/
+/deploy.sh
+/DEPLOYMENT.md
+/DEPLOYMENT-DOCKER.md
+/update.sh
+/UPDATE_GUIDE.md
