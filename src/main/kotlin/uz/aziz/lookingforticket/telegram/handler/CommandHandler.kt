@@ -31,7 +31,7 @@ class CommandHandler(
 ) {
     
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
     
     fun handleStartCommand(message: Message) {
         val chat = message.chat
@@ -258,8 +258,8 @@ class CommandHandler(
             text = """
                 ✅ Yetib borish stantsiyasi: <b>${station.name}</b>
                 
-                📅 Iltimos, jo'nash sanasining boshlanish sanasini kiriting (format: DD.MM.YYYY):
-                (Masalan: 31.12.2025)
+                📅 Iltimos, jo'nash sanasining boshlanish sanasini kiriting (format: DD.MM.YYYY HH:mm):
+                (Masalan: 31.12.2025 12:00)
             """.trimIndent(),
             parseMode = "HTML"
         )
@@ -272,19 +272,19 @@ class CommandHandler(
         val text = message.text?.trim() ?: return false
         
         val fromDate = try {
-            LocalDate.parse(text, dateFormatter)
+            LocalDateTime.parse(text, dateFormatter)
         } catch (e: DateTimeParseException) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
-                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY formatida kiriting (Masalan: 31.12.2025):"
+                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY HH:mm formatida kiriting (Masalan: 31.12.2025 12:00):"
             )
             return false
         }
         
-        if (fromDate.isBefore(LocalDate.now())) {
+        if (fromDate.isBefore(LocalDateTime.now())) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
-                text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, kelajak sanasini kiriting:"
+                text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, to'g'ri sanasini kiriting:"
             )
             return false
         }
@@ -297,8 +297,8 @@ class CommandHandler(
             text = """
                 ✅ Boshlanish sanasi: <b>${fromDate.format(dateFormatter)}</b>
                 
-                📅 Iltimos, jo'nash sanasining tugash sanasini kiriting (format: DD.MM.YYYY):
-                (Masalan: 05.01.2026)
+                📅 Iltimos, jo'nash sanasining tugash sanasini kiriting (format: DD.MM.YYYY HH:mm):
+                (Masalan: 05.01.2026 12:00)
             """.trimIndent(),
             parseMode = "HTML"
         )
@@ -311,17 +311,17 @@ class CommandHandler(
         val text = message.text?.trim() ?: return false
         
         val toDate = try {
-            LocalDate.parse(text, dateFormatter)
+            LocalDateTime.parse(text, dateFormatter)
         } catch (e: DateTimeParseException) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
-                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY formatida kiriting (Masalan: 05.01.2026):"
+                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY HH:mm formatida kiriting (Masalan: 05.01.2026 12:00):"
             )
             return false
         }
         
         val fromDate = try {
-            LocalDate.parse(fromDateStr, dateFormatter)
+            LocalDateTime.parse(fromDateStr, dateFormatter)
         } catch (e: DateTimeParseException) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
@@ -338,7 +338,7 @@ class CommandHandler(
             return false
         }
         
-        if (toDate.isBefore(LocalDate.now())) {
+        if (toDate.isBefore(LocalDateTime.now())) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, kelajak sanasini kiriting:"
@@ -422,7 +422,6 @@ class CommandHandler(
     }
     
     fun handleFinishBrandSelection(stationFromId: String, stationToId: String, chatId: Long, userId: Long, allBrands: Boolean = false): Boolean {
-        logger.info("Finishing brand selection for chat $chatId, asking for number of people")
         // Ask for number of people instead of creating request immediately
         telegramBot.sendMessageBlocking(
             chatId = chatId,
@@ -437,7 +436,6 @@ class CommandHandler(
         
         // Set state to wait for number of people
         stateManager.setState(chatId, uz.aziz.lookingforticket.telegram.state.UserState.WAITING_NUMBER_OF_PEOPLE)
-        logger.info("Set state to WAITING_NUMBER_OF_PEOPLE for chat $chatId")
         
         return true
     }
@@ -445,8 +443,6 @@ class CommandHandler(
     fun handleNumberOfPeopleInput(message: Message, userId: Long, stationFromId: String, stationToId: String): Boolean {
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
-        
-        logger.info("Processing number of people input for chat $chatId: '$text'")
         
         val numberOfPeople = try {
             val num = text.toInt()
@@ -465,7 +461,7 @@ class CommandHandler(
                 return false
             }
             num
-        } catch (e: NumberFormatException) {
+        } catch (_: NumberFormatException) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
                 text = "❌ Noto'g'ri format. Iltimos, raqam kiriting (Masalan: 1, 2, 3):"
@@ -487,14 +483,14 @@ class CommandHandler(
         
         // Parse dates
         val fromDate = try {
-            LocalDate.parse(fromDateStr, dateFormatter)
+            LocalDateTime.parse(fromDateStr, dateFormatter)
         } catch (_: Exception) {
             telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
         
         val toDate = try {
-            LocalDate.parse(toDateStr, dateFormatter)
+            LocalDateTime.parse(toDateStr, dateFormatter)
         } catch (_: Exception) {
             telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false

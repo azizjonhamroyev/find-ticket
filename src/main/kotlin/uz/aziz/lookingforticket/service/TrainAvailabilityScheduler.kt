@@ -66,7 +66,7 @@ class TrainAvailabilityScheduler(
     
     private fun checkRequestAsync(request: RequestEntity): Mono<Unit> {
         return Mono.fromCallable {
-            val currentDate = LocalDate.now()
+            val currentDate = LocalDateTime.now()
             
             // Check if to_date is already in the past - deactivate the request
             if (request.toDate.isBefore(currentDate)) {
@@ -80,7 +80,10 @@ class TrainAvailabilityScheduler(
             // Check if from_date is in the past - adjust to current_date
             val effectiveFromDate = if (request.fromDate.isBefore(currentDate)) {
                 logger.debug(
-                    "Request ${request.id} from_date (${request.fromDate}) is in the past. Adjusting to current_date ($currentDate)"
+                    "Request {} from_date ({}) is in the past. Adjusting to current_date ({})",
+                    request.id,
+                    request.fromDate,
+                    currentDate
                 )
                 currentDate
             } else {
@@ -151,7 +154,7 @@ class TrainAvailabilityScheduler(
                     
                     // Get the updated notification count
                     val updatedRequest = requestRepository.findById(request.id).orElse(null)
-                    val newNotificationCount = updatedRequest?.notificationCount ?: request.notificationCount + 1
+                    val newNotificationCount = updatedRequest?.notificationCount ?: (request.notificationCount + 1)
                     
                     // Update last notified timestamp
                     requestRepository.updateLastNotifiedAt(request.id, now)

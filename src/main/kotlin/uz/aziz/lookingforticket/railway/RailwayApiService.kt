@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
+import org.springframework.web.reactive.function.client.bodyToMono
 import reactor.core.publisher.Mono
 import reactor.util.retry.Retry
 import uz.aziz.lookingforticket.config.RailwayUzProperties
@@ -17,6 +18,7 @@ import uz.aziz.lookingforticket.railway.dto.response.*
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 @Service
 class RailwayApiService(
@@ -93,7 +95,7 @@ class RailwayApiService(
         return finalRequestSpec
             .bodyValue(request)
             .retrieve()
-            .bodyToMono(TrainAvailabilityResponse::class.java)
+            .bodyToMono<TrainAvailabilityResponse>()
             .retryWhen(
                 Retry.backoff(railwayProperties.maxRetries.toLong(), Duration.ofMillis(railwayProperties.initialRetryDelayMs))
                     .maxBackoff(Duration.ofMillis(railwayProperties.maxRetryDelayMs))
@@ -219,8 +221,8 @@ class RailwayApiService(
     fun getAvailableTrainsWithSeatsForDateRange(
         stationFrom: String,
         stationTo: String,
-        fromDate: LocalDate,
-        toDate: LocalDate,
+        fromDate: LocalDateTime,
+        toDate: LocalDateTime,
         minSeats: Int = 1,
         brandNames: List<String>? = null
     ): Mono<List<TrainInfo>> {
@@ -232,7 +234,7 @@ class RailwayApiService(
         while (!currentDate.isAfter(toDate)) {
             val dateMono = if (isFirstRequest) {
                 // No delay for the first request
-                checkTrainAvailability(stationFrom, stationTo, currentDate)
+                checkTrainAvailability(stationFrom, stationTo, currentDate.toLocalDate())
                     .map { response ->
                         extractAvailableTrains(response, minSeats, brandNames)
                     }
@@ -240,7 +242,7 @@ class RailwayApiService(
             } else {
                 // Add delay before subsequent requests to avoid rate limiting
                 Mono.delay(Duration.ofMillis(railwayProperties.delayBetweenRequestsMs))
-                    .then(checkTrainAvailability(stationFrom, stationTo, currentDate))
+                    .then(checkTrainAvailability(stationFrom, stationTo, currentDate.toLocalDate()))
                     .map { response ->
                         extractAvailableTrains(response, minSeats, brandNames)
                     }

@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.bodyToMono
 import uz.aziz.lookingforticket.config.TelegramProperties
 import uz.aziz.lookingforticket.db.repo.UserRepository
 import uz.aziz.lookingforticket.telegram.dto.response.*
@@ -48,7 +49,7 @@ class TelegramPollingService(
                 .header("Content-Type", "application/json")
                 .bodyValue(mapOf("drop_pending_updates" to true))
                 .retrieve()
-                .bodyToMono(TelegramApiResponse::class.java)
+                .bodyToMono<TelegramApiResponse>()
                 .block()
             logger.info("Deleted existing webhook (if any) to enable polling")
         } catch (e: Exception) {
@@ -64,7 +65,7 @@ class TelegramPollingService(
             val updates = webClient.get()
                 .uri("$telegramApiUrl/getUpdates?offset=${lastUpdateId + 1}&timeout=10")
                 .retrieve()
-                .bodyToMono(GetUpdatesResponse::class.java)
+                .bodyToMono<GetUpdatesResponse>()
                 .block()
             
             if (updates?.ok == true && updates.result != null) {
@@ -84,7 +85,7 @@ class TelegramPollingService(
         update.callbackQuery?.let { handleCallbackQuery(it) }
     }
     
-    private fun handleCallbackQuery(callbackQuery: uz.aziz.lookingforticket.telegram.dto.response.CallbackQuery) {
+    private fun handleCallbackQuery(callbackQuery: CallbackQuery) {
         val chatId = callbackQuery.message?.chat?.id ?: callbackQuery.from.id
         val data = callbackQuery.data ?: return
         
@@ -175,7 +176,7 @@ class TelegramPollingService(
                 .header("Content-Type", "application/json")
                 .bodyValue(mapOf("callback_query_id" to callbackQueryId))
                 .retrieve()
-                .bodyToMono(TelegramApiResponse::class.java)
+                .bodyToMono(Any::class.java)
                 .block()
         } catch (e: Exception) {
             logger.error("Error answering callback query: ${e.message}", e)
@@ -232,7 +233,6 @@ class TelegramPollingService(
                 }
             }
             state == UserState.WAITING_NUMBER_OF_PEOPLE -> {
-                logger.info("Handling number of people input for chat $chatId")
                 val requestState = stateManager.getRequestState(chatId)
                 if (commandHandler.handleNumberOfPeopleInput(
                         message,
@@ -241,10 +241,7 @@ class TelegramPollingService(
                         requestState.stationToId ?: ""
                     )
                 ) {
-                    logger.info("Successfully processed number of people input, clearing state for chat $chatId")
                     stateManager.clearState(chatId)
-                } else {
-                    logger.warn("Failed to process number of people input for chat $chatId")
                 }
             }
             else -> {

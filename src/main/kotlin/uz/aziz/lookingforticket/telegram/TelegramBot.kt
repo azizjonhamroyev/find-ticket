@@ -3,6 +3,7 @@ package uz.aziz.lookingforticket.telegram
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.bodyToMono
 import reactor.core.publisher.Mono
 import uz.aziz.lookingforticket.config.TelegramProperties
 import uz.aziz.lookingforticket.telegram.dto.request.SendMessageRequest
@@ -35,10 +36,10 @@ class TelegramBot(
             .header("Content-Type", "application/json")
             .bodyValue(request)
             .retrieve()
-            .bodyToMono(TelegramApiResponse::class.java)
+            .bodyToMono<TelegramApiResponse>()
             .map { response ->
-                if (response.ok == true) {
-                    val messageId = response.getMessageId()
+                if (response.ok) {
+                    val messageId = response.result?.messageId
                     logger.info("Successfully sent message to chat $chatId (messageId: $messageId)")
                     SendMessageResult(
                         isSuccess = true,
@@ -94,10 +95,10 @@ class TelegramBot(
             .header("Content-Type", "application/json")
             .bodyValue(request)
             .retrieve()
-            .bodyToMono(TelegramApiResponse::class.java)
+            .bodyToMono<TelegramApiResponse>()
             .map { response ->
-                if (response.ok == true) {
-                    val messageId = response.getMessageId()
+                if (response.ok) {
+                    val messageId = 0L
                     logger.info("Successfully sent message with buttons to chat $chatId (messageId: $messageId)")
                     SendMessageResult(
                         isSuccess = true,
@@ -122,9 +123,7 @@ class TelegramBot(
                 )
             }
     }
-    
-    // Blocking wrappers for non-reactive contexts (e.g., CommandHandler)
-    // These can be used when not in a reactive chain
+
     fun sendMessageBlocking(chatId: Long, text: String, parseMode: String? = "HTML"): SendMessageResult {
         return sendMessage(chatId, text, parseMode).block() ?: SendMessageResult(
             isSuccess = false,

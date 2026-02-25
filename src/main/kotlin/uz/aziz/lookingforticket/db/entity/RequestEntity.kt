@@ -24,10 +24,10 @@ data class RequestEntity(
     val stationTo: StationEntity,
     
     @Column(name = "from_date")
-    val fromDate: LocalDate,
+    val fromDate: LocalDateTime,
     
     @Column(name = "to_date")
-    val toDate: LocalDate,
+    val toDate: LocalDateTime,
     
     @Column(name = "created_at")
     val createdAt: LocalDateTime = LocalDateTime.now(),
