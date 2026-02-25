@@ -31,7 +31,7 @@ class CommandHandler(
 ) {
     
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy H:mm")
     
     fun handleStartCommand(message: Message) {
         val chat = message.chat

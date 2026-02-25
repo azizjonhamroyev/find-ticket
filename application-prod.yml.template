@@ -19,7 +19,7 @@ spring:
 
 railway:
   uz:
-    base-url: https://e-ticket.railway.uz
+    base-url: https://eticket.railway.uz
     xsrf-token: CHANGE_THIS_XSRF_TOKEN
     cookie: CHANGE_THIS_COOKIE
 

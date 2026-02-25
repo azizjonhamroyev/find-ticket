@@ -13,12 +13,15 @@ import reactor.util.retry.Retry
 import uz.aziz.lookingforticket.config.RailwayUzProperties
 import uz.aziz.lookingforticket.db.entity.ApiLogEntity
 import uz.aziz.lookingforticket.db.repo.ApiLogRepository
-import uz.aziz.lookingforticket.railway.dto.request.TrainAvailabilityRequest
+import uz.aziz.lookingforticket.railway.dto.request.DirectionsRequest
+import uz.aziz.lookingforticket.railway.dto.request.ForwardDirectionRequest
+import uz.aziz.lookingforticket.railway.dto.request.TrainsListRequest
 import uz.aziz.lookingforticket.railway.dto.response.*
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 @Service
 class RailwayApiService(
@@ -26,18 +29,46 @@ class RailwayApiService(
     private val railwayProperties: RailwayUzProperties,
     private val apiLogRepository: ApiLogRepository,
     private val objectMapper: ObjectMapper
-) {
+    ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+    
+    /** Parses TrainInfo departure date+time (dd.MM.yyyy, HH:mm) to LocalDateTime for timestamp-range filtering. */
+    private fun parseTrainDepartureDateTime(train: TrainInfo): LocalDateTime? {
+        val dateStr = train.departureDate
+        val timeStr = train.departureTime
+        if (dateStr.isBlank()) return null
+        return try {
+            val date = LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+            val time = if (timeStr.isNotBlank()) {
+                java.time.LocalTime.parse(timeStr, DateTimeFormatter.ofPattern("HH:mm"))
+            } else {
+                java.time.LocalTime.MIN
+            }
+            LocalDateTime.of(date, time)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /** Returns true if train's departure is within [fromInclusive, toInclusive]. */
+    private fun isTrainDepartureInRange(train: TrainInfo, fromInclusive: LocalDateTime, toInclusive: LocalDateTime): Boolean {
+        val dep = parseTrainDepartureDateTime(train) ?: return false
+        return !dep.isBefore(fromInclusive) && !dep.isAfter(toInclusive)
+    }
     
     fun checkTrainAvailability(
         stationFrom: String,
         stationTo: String,
         depDate: LocalDate
-    ): Mono<TrainAvailabilityResponse> {
-        val request = TrainAvailabilityRequest.create(
-            stationFrom = stationFrom,
-            stationTo = stationTo,
-            depDate = depDate
+    ): Mono<TrainsListApiResponse> {
+        val request = TrainsListRequest(
+            directions = DirectionsRequest(
+                forward = ForwardDirectionRequest.create(
+                    depStationCode = stationFrom,
+                    arvStationCode = stationTo,
+                    depDate = depDate
+                )
+            )
         )
         
         return checkTrainAvailabilityWithRequest(request, stationFrom, stationTo, depDate.toString())
@@ -45,14 +76,14 @@ class RailwayApiService(
     
     
     private fun checkTrainAvailabilityWithRequest(
-        request: TrainAvailabilityRequest,
+        request: TrainsListRequest,
         stationFrom: String,
         stationTo: String,
         dateInfo: String
-    ): Mono<TrainAvailabilityResponse> {
+    ): Mono<TrainsListApiResponse> {
         logger.debug("Checking train availability: $stationFrom -> $stationTo on $dateInfo")
         
-        val url = "${railwayProperties.baseUrl}/api/v3/trains/availability/space/between/stations"
+        val url = "${railwayProperties.baseUrl}/api/v3/handbook/trains/list"
         val startTime = System.currentTimeMillis()
         
         val requestBody = try {
@@ -95,7 +126,7 @@ class RailwayApiService(
         return finalRequestSpec
             .bodyValue(request)
             .retrieve()
-            .bodyToMono<TrainAvailabilityResponse>()
+            .bodyToMono<TrainsListApiResponse>()
             .retryWhen(
                 Retry.backoff(railwayProperties.maxRetries.toLong(), Duration.ofMillis(railwayProperties.initialRetryDelayMs))
                     .maxBackoff(Duration.ofMillis(railwayProperties.maxRetryDelayMs))
@@ -175,6 +206,17 @@ class RailwayApiService(
             }
     }
     
+    /** Parses "25.02.2026 16:00" into date part and time part. */
+    private fun parseDateTimeString(dateTimeStr: String?): Pair<String, String> {
+        if (dateTimeStr.isNullOrBlank()) return "" to ""
+        val parts = dateTimeStr.trim().split(" ", limit = 2)
+        return when (parts.size) {
+            2 -> parts[0] to parts[1]
+            1 -> parts[0] to ""
+            else -> "" to ""
+        }
+    }
+    
     @Transactional
     fun saveLog(
         url: String,
@@ -226,26 +268,23 @@ class RailwayApiService(
         minSeats: Int = 1,
         brandNames: List<String>? = null
     ): Mono<List<TrainInfo>> {
-        // Make separate API requests for each date in the range with delays between requests
-        var currentDate = fromDate
+        // Iterate by calendar day (API is per-day); then filter by timestamp range
+        val startDay = fromDate.toLocalDate()
+        val endDay = toDate.toLocalDate()
+        var currentDay = startDay
         var combinedMono: Mono<List<TrainInfo>> = Mono.just(emptyList())
         var isFirstRequest = true
         
-        while (!currentDate.isAfter(toDate)) {
+        while (!currentDay.isAfter(endDay)) {
+            val day = currentDay
             val dateMono = if (isFirstRequest) {
-                // No delay for the first request
-                checkTrainAvailability(stationFrom, stationTo, currentDate.toLocalDate())
-                    .map { response ->
-                        extractAvailableTrains(response, minSeats, brandNames)
-                    }
+                checkTrainAvailability(stationFrom, stationTo, day)
+                    .map { response -> extractAvailableTrains(response, minSeats, brandNames) }
                     .defaultIfEmpty(emptyList())
             } else {
-                // Add delay before subsequent requests to avoid rate limiting
                 Mono.delay(Duration.ofMillis(railwayProperties.delayBetweenRequestsMs))
-                    .then(checkTrainAvailability(stationFrom, stationTo, currentDate.toLocalDate()))
-                    .map { response ->
-                        extractAvailableTrains(response, minSeats, brandNames)
-                    }
+                    .then(checkTrainAvailability(stationFrom, stationTo, day))
+                    .map { response -> extractAvailableTrains(response, minSeats, brandNames) }
                     .defaultIfEmpty(emptyList())
             }
             
@@ -255,58 +294,60 @@ class RailwayApiService(
                 }
             }
             
-            currentDate = currentDate.plusDays(1)
+            currentDay = currentDay.plusDays(1)
             isFirstRequest = false
         }
         
-        return combinedMono
+        // Filter to trains whose departure is within [fromDate, toDate] (timestamp range)
+        return combinedMono.map { trains ->
+            trains.filter { isTrainDepartureInRange(it, fromDate, toDate) }
+        }
     }
     
     private fun extractAvailableTrains(
-        response: TrainAvailabilityResponse,
+        response: TrainsListApiResponse,
         minSeats: Int,
         brandNames: List<String>? = null
     ): List<TrainInfo> {
         val trains = mutableListOf<TrainInfo>()
+        val trainList = response.data?.directions?.forward?.trains ?: return trains
         
-        response.express?.direction?.forEach { direction ->
-            direction.trains?.forEach { trainList ->
-                trainList.train?.forEach { train ->
-                    val trainBrand = train.brand ?: ""
-                    
-                    // Filter by brands if specified (train brand must match any of the selected brands)
-                    if (brandNames != null && !brandNames.contains(trainBrand)) {
-                        return@forEach
-                    }
-                    
-                    train.places?.cars?.forEach { car ->
-                        val freeSeats = car.freeSeats?.toIntOrNull() ?: 0
-                        
-                        if (freeSeats >= minSeats) {
-                            val minTariff = car.tariffs?.tariff?.mapNotNull { 
-                                it.tariff?.toLongOrNull() 
-                            }?.minOrNull() ?: 0L
-                            
-                            trains.add(
-                                TrainInfo(
-                                    trainNumber = train.number ?: "",
-                                    trainNumber2 = train.number2 ?: train.number ?: "",
-                                    brand = trainBrand,
-                                    trainType = train.type ?: "",
-                                    routeStations = train.route?.station ?: emptyList(),
-                                    carType = car.type ?: "",
-                                    carTypeShow = car.typeShow ?: "",
-                                    freeSeats = freeSeats,
-                                    departureTime = train.departure?.localTime ?: "",
-                                    departureDate = train.departure?.localDate ?: "",
-                                    arrivalTime = train.arrival?.localTime ?: "",
-                                    arrivalDate = train.arrival?.localDate ?: "",
-                                    timeInWay = train.timeInWay ?: "",
-                                    minTariff = minTariff
-                                )
-                            )
-                        }
-                    }
+        for (train in trainList) {
+            val trainBrand = train.brand ?: ""
+            
+            if (brandNames != null && !brandNames.contains(trainBrand)) {
+                continue
+            }
+            
+            val (depDate, depTime) = parseDateTimeString(train.departureDate)
+            val (arvDate, arvTime) = parseDateTimeString(train.arrivalDate)
+            val routeStations = listOfNotNull(
+                train.subRoute?.depStationName,
+                train.subRoute?.arvStationName
+            ).filter { it.isNotBlank() }
+            
+            train.cars?.forEach { car ->
+                val freeSeats = car.freeSeats ?: 0
+                if (freeSeats >= minSeats) {
+                    val minTariff = (car.tariffs?.mapNotNull { it.tariff?.toLong() }?.minOrNull() ?: 0L)
+                    trains.add(
+                        TrainInfo(
+                            trainNumber = train.number ?: "",
+                            trainNumber2 = train.number ?: "",
+                            brand = trainBrand,
+                            trainType = train.type ?: "",
+                            routeStations = routeStations.ifEmpty { listOfNotNull(train.originRoute?.depStationName, train.originRoute?.arvStationName).filter { it.isNotBlank() } },
+                            carType = car.type ?: "",
+                            carTypeShow = car.type ?: "",
+                            freeSeats = freeSeats,
+                            departureTime = depTime,
+                            departureDate = depDate,
+                            arrivalTime = arvTime,
+                            arrivalDate = arvDate,
+                            timeInWay = train.timeOnWay ?: "",
+                            minTariff = minTariff
+                        )
+                    )
                 }
             }
         }

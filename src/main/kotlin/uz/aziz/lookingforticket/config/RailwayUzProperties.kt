@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component
 @Component
 @ConfigurationProperties(prefix = "railway.uz")
 data class RailwayUzProperties(
-    var baseUrl: String = "https://e-ticket.railway.uz",
+    var baseUrl: String = "https://eticket.railway.uz",
     var xsrfToken: String = "",
     var cookie: String = "",
     var delayBetweenRequestsMs: Long = 2000, // 2 seconds delay between requests
