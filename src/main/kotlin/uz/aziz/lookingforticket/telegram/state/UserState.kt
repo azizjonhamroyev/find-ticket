@@ -11,14 +11,3 @@ enum class UserState {
     WAITING_PRICE_CHOICE,
     WAITING_MAX_PRICE
 }
-
-data class RequestCreationState(
-    val stationFromId: String? = null,
-    val stationToId: String? = null,
-    val fromDate: String? = null,
-    val toDate: String? = null,
-    val selectedBrandIds: MutableSet<Long> = mutableSetOf(),
-    val numberOfPeople: Int? = null,
-    val maxPrice: Long? = null
-)
-

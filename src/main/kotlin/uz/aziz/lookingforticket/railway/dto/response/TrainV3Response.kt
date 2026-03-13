@@ -36,25 +36,3 @@ data class TrainV3Response(
     @JsonProperty("comment")
     val comment: String? = null
 )
-
-data class RouteNamesResponse(
-    @JsonProperty("depStationName")
-    val depStationName: String?,
-
-    @JsonProperty("arvStationName")
-    val arvStationName: String?
-)
-
-data class SubRouteResponse(
-    @JsonProperty("depStationName")
-    val depStationName: String?,
-
-    @JsonProperty("depStationCode")
-    val depStationCode: String?,
-
-    @JsonProperty("arvStationName")
-    val arvStationName: String?,
-
-    @JsonProperty("arvStationCode")
-    val arvStationCode: String?
-)

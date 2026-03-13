@@ -10,18 +10,3 @@ data class TrainsListApiResponse(
     @JsonProperty("error")
     val error: Any? = null
 )
-
-data class TrainsListDataResponse(
-    @JsonProperty("directions")
-    val directions: TrainsListDirectionsResponse?
-)
-
-data class TrainsListDirectionsResponse(
-    @JsonProperty("forward")
-    val forward: ForwardTrainsResponse?
-)
-
-data class ForwardTrainsResponse(
-    @JsonProperty("trains")
-    val trains: List<TrainV3Response>?
-)

@@ -33,6 +33,56 @@ class CommandHandler(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val dateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy H:mm")
     private val dateFormatterOnly = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    private val displayDateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+
+    private fun formatDateTime(dateTime: LocalDateTime) = dateTime.format(displayDateTimeFormatter)
+
+    private fun formatRequestSummary(request: RequestEntity, showStatus: Boolean): String {
+        val brandText = requestBrandRepository.findByRequestId(request.id)
+            .let { if (it.isEmpty()) "Barcha brendlar" else it.joinToString(", ") { b -> b.brand.displayName } }
+        val priceText = if (request.maxPrice == null) "Har qanday" else "Maks. ${String.format("%,d", request.maxPrice)} so'm"
+        return buildString {
+            append("📋 <b>So'rov №${request.id}</b>\n")
+            append("📍 ${request.stationFrom.name} → ${request.stationTo.name}\n")
+            append("📅 ${request.fromDate.format(dateTimeFormatter)} - ${request.toDate.format(dateTimeFormatter)}\n")
+            append("🚂 Brendlar: $brandText\n")
+            append("👥 Kishi soni: ${request.minSeats}\n")
+            append("💰 Narx: $priceText\n")
+            append("📊 Xabarlar soni: ${request.notificationCount}/2\n")
+            request.lastCheckedAt?.let { append("🕐 Oxirgi tekshiruv: ${formatDateTime(it)}\n") }
+            request.lastNotifiedAt?.let { append("📬 Oxirgi xabar: ${formatDateTime(it)}\n") }
+            if (showStatus) {
+                append(if (request.isActive) "✅ Holat: Faol\n" else "❌ Holat: Nofaol\n")
+            }
+        }
+    }
+
+    private companion object {
+        const val MSG_START_FIRST = "Iltimos, avval /start buyrug'ini bajaring."
+    }
+
+    /** Builds button rows and callback data in 2-column layout. */
+    private fun <T> buildTwoColumnButtons(
+        items: List<T>,
+        buttonText: (T) -> String,
+        callbackData: (T) -> String
+    ): Pair<List<List<String>>, List<List<String>>> {
+        val buttonRows = mutableListOf<List<String>>()
+        val callbackRows = mutableListOf<List<String>>()
+        var currentRow = mutableListOf<String>()
+        var currentCallback = mutableListOf<String>()
+        items.forEachIndexed { index, item ->
+            currentRow.add(buttonText(item))
+            currentCallback.add(callbackData(item))
+            if (currentRow.size == 2 || index == items.size - 1) {
+                buttonRows.add(currentRow.toList())
+                callbackRows.add(currentCallback.toList())
+                currentRow = mutableListOf()
+                currentCallback = mutableListOf()
+            }
+        }
+        return buttonRows to callbackRows
+    }
     
     /**
      * Parses user input for date/time.
@@ -91,10 +141,7 @@ class CommandHandler(
         val user = userRepository.findByChatId(chatId)
         
         if (user == null) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "Iltimos, avval /start buyrug'ini bajaring."
-            )
+            telegramBot.sendMessageBlocking(chatId, text = MSG_START_FIRST)
             return
         }
         val allRequests = requestRepository.findByUserIdOrderByCreatedAtDesc(user.id)
@@ -117,101 +164,40 @@ class CommandHandler(
             append("📋 <b>Mening so'rovlarim</b>\n\n")
             append("Faol: <b>${activeRequests.size}</b> ta\n")
             append("Nofaol: <b>${inactiveRequests.size}</b> ta\n\n")
-            if (activeRequests.isNotEmpty()) {
-                append("━━━━━━━━ Faol so'rovlar ━━━━━━━━\n\n")
-            }
+            if (activeRequests.isNotEmpty()) append("━━━━━━━━ Faol so'rovlar ━━━━━━━━\n\n")
             activeRequests.forEachIndexed { index, request ->
-                // Get brands for this request
-                val requestBrands = requestBrandRepository.findByRequestId(request.id)
-                val brandText = if (requestBrands.isEmpty()) {
-                    "Barcha brendlar"
-                } else {
-                    requestBrands.joinToString(", ") { it.brand.displayName }
-                }
-                
-                // Store nullable values in local variables to avoid smart cast issues
-                val lastCheckedAt = request.lastCheckedAt
-                val lastNotifiedAt = request.lastNotifiedAt
-                
-                append("📋 <b>So'rov №${request.id}</b>\n")
-                append("📍 ${request.stationFrom.name} → ${request.stationTo.name}\n")
-                append("📅 ${request.fromDate.format(dateTimeFormatter)} - ${request.toDate.format(dateTimeFormatter)}\n")
-                append("🚂 Brendlar: $brandText\n")
-                append("👥 Kishi soni: ${request.minSeats}\n")
-                append("💰 Narx: ${if (request.maxPrice == null) "Har qanday" else "Maks. ${String.format("%,d", request.maxPrice)} so'm"}\n")
-                append("📊 Xabarlar soni: ${request.notificationCount}/2\n")
-                
-                if (lastCheckedAt != null) {
-                    append("🕐 Oxirgi tekshiruv: ${formatDateTime(lastCheckedAt)}\n")
-                }
-                
-                if (lastNotifiedAt != null) {
-                    append("📬 Oxirgi xabar: ${formatDateTime(lastNotifiedAt)}\n")
-                }
-                
-                val statusEmoji = if (request.isActive) "✅" else "❌"
-                append("$statusEmoji Holat: ${if (request.isActive) "Faol" else "Nofaol"}\n")
-                if (index < activeRequests.size - 1) {
-                    append("\n──────────\n\n")
-                } else {
-                    append("\n")
-                }
+                append(formatRequestSummary(request, showStatus = true))
+                append(if (index < activeRequests.size - 1) "\n──────────\n\n" else "\n")
             }
-
             if (inactiveRequests.isNotEmpty()) {
-                if (activeRequests.isNotEmpty()) {
-                    append("\n")
-                }
+                if (activeRequests.isNotEmpty()) append("\n")
                 append("━━━━━━━━ Nofaol so'rovlar ━━━━━━━━\n\n")
                 inactiveRequests.forEachIndexed { index, request ->
-                    val requestBrands = requestBrandRepository.findByRequestId(request.id)
-                    val brandText = if (requestBrands.isEmpty()) {
-                        "Barcha brendlar"
-                    } else {
-                        requestBrands.joinToString(", ") { it.brand.displayName }
-                    }
-                    val lastCheckedAt = request.lastCheckedAt
-                    val lastNotifiedAt = request.lastNotifiedAt
-
-                    append("📋 <b>So'rov №${request.id}</b>\n")
-                    append("📍 ${request.stationFrom.name} → ${request.stationTo.name}\n")
-                    append("📅 ${request.fromDate.format(dateTimeFormatter)} - ${request.toDate.format(dateTimeFormatter)}\n")
-                    append("🚂 Brendlar: $brandText\n")
-                    append("👥 Kishi soni: ${request.minSeats}\n")
-                    append("💰 Narx: ${if (request.maxPrice == null) "Har qanday" else "Maks. ${String.format("%,d", request.maxPrice)} so'm"}\n")
-                    append("📊 Xabarlar soni: ${request.notificationCount}/2\n")
-
-                    if (lastCheckedAt != null) {
-                        append("🕐 Oxirgi tekshiruv: ${formatDateTime(lastCheckedAt)}\n")
-                    }
-                    if (lastNotifiedAt != null) {
-                        append("📬 Oxirgi xabar: ${formatDateTime(lastNotifiedAt)}\n")
-                    }
-                    append("❌ Holat: Nofaol\n")
-
-                    if (index < inactiveRequests.size - 1) {
-                        append("\n──────────\n\n")
-                    } else {
-                        append("\n")
-                    }
+                    append(formatRequestSummary(request, showStatus = true))
+                    append(if (index < inactiveRequests.size - 1) "\n──────────\n\n" else "\n")
                 }
             }
         }
 
-        // Add inline buttons to reactivate inactive requests (if any)
-        if (inactiveRequests.isEmpty()) {
+        // Add inline buttons to deactivate / reactivate requests
+        val buttons = mutableListOf<List<String>>()
+        val callbackDataRows = mutableListOf<List<String>>()
+        activeRequests.forEach { request ->
+            buttons.add(listOf("⏹ So'rov #${request.id}ni deaktivatsiya qilish"))
+            callbackDataRows.add(listOf("deactivate_request_${request.id}"))
+        }
+        inactiveRequests.forEach { request ->
+            buttons.add(listOf("♻️ So'rov #${request.id}ni faollashtirish"))
+            callbackDataRows.add(listOf("reactivate_request_${request.id}"))
+        }
+
+        if (buttons.isEmpty()) {
             telegramBot.sendMessageWithMainMenuBlocking(
                 chatId = chatId,
                 text = messageText,
                 parseMode = "HTML"
             )
         } else {
-            val buttons = mutableListOf<List<String>>()
-            val callbackDataRows = mutableListOf<List<String>>()
-            inactiveRequests.forEach { request ->
-                buttons.add(listOf("♻️ So'rov #${request.id}ni faollashtirish"))
-                callbackDataRows.add(listOf("reactivate_request_${request.id}"))
-            }
             telegramBot.sendMessageWithButtonsBlocking(
                 chatId = chatId,
                 text = messageText,
@@ -222,42 +208,14 @@ class CommandHandler(
         }
     }
     
-    private fun formatDateTime(dateTime: LocalDateTime): String {
-        return dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
-    }
-    
     fun handleNewRequestCommand(message: Message) {
         val chatId = message.chat.id
-        val user = userRepository.findByChatId(chatId)
-        
-        if (user == null) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "Iltimos, avval /start buyrug'ini bajaring."
-            )
+        if (userRepository.findByChatId(chatId) == null) {
+            telegramBot.sendMessageBlocking(chatId, text = MSG_START_FIRST)
             return
         }
-        
         val stations = stationRepository.findAllByOrderByName()
-        
-        // Create buttons for stations (2 columns)
-        val buttonRows = mutableListOf<List<String>>()
-        val callbackDataRows = mutableListOf<List<String>>()
-        var currentRow = mutableListOf<String>()
-        var currentCallbackRow = mutableListOf<String>()
-        
-        stations.forEachIndexed { index, station ->
-            currentRow.add(station.name)
-            currentCallbackRow.add("select_station_from_${station.id}")
-            
-            if (currentRow.size == 2 || index == stations.size - 1) {
-                buttonRows.add(currentRow.toList())
-                callbackDataRows.add(currentCallbackRow.toList())
-                currentRow = mutableListOf()
-                currentCallbackRow = mutableListOf()
-            }
-        }
-        
+        val (buttonRows, callbackDataRows) = buildTwoColumnButtons(stations, { it.name }, { "select_station_from_${it.id}" })
         telegramBot.sendMessageWithButtonsBlocking(
             chatId = chatId,
             text = """
@@ -281,42 +239,18 @@ class CommandHandler(
             return null
         }
         
-        val stations = stationRepository.findAllByOrderByName()
-            .filter { it.id != stationId }
-        
-        // Create buttons for destination stations (2 columns)
-        val buttonRows = mutableListOf<List<String>>()
-        val callbackDataRows = mutableListOf<List<String>>()
-        var currentRow = mutableListOf<String>()
-        var currentCallbackRow = mutableListOf<String>()
-        
-        stations.forEachIndexed { index, st ->
-            currentRow.add(st.name)
-            currentCallbackRow.add("select_station_to_${st.id}_from_${stationId}")
-            
-            if (currentRow.size == 2 || index == stations.size - 1) {
-                buttonRows.add(currentRow.toList())
-                callbackDataRows.add(currentCallbackRow.toList())
-                currentRow = mutableListOf()
-                currentCallbackRow = mutableListOf()
-            }
-        }
-        
+        val stations = stationRepository.findAllByOrderByName().filter { it.id != stationId }
+        val (buttonRows, callbackDataRows) = buildTwoColumnButtons(stations, { it.name }, { "select_station_to_${it.id}_from_$stationId" })
         telegramBot.sendMessageWithButtonsBlocking(
             chatId = chatId,
-            text = """
-                ✅ Jo'nash stantsiyasi: <b>${station.name}</b>
-                
-                Iltimos, yetib borish stantsiyasini tanlang:
-            """.trimIndent(),
+            text = "✅ Jo'nash stantsiyasi: <b>${station.name}</b>\n\nIltimos, yetib borish stantsiyasini tanlang:",
             buttons = buttonRows,
             callbackData = callbackDataRows,
             parseMode = "HTML"
         )
-        
         return station.id
     }
-    
+
     fun handleStationToSelection(stationId: String, stationFromId: String, chatId: Long): String? {
         val station = stationRepository.findById(stationId).orElse(null)
         if (station == null) {
@@ -351,7 +285,7 @@ class CommandHandler(
         return station.id
     }
     
-    fun handleFromDateInput(message: Message, userId: Long, stationFromId: String, stationToId: String): Boolean {
+    fun handleFromDateInput(message: Message): Boolean {
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
         
@@ -389,95 +323,49 @@ class CommandHandler(
         return true
     }
     
-    fun handleToDateInput(message: Message, userId: Long, stationFromId: String, stationToId: String, fromDateStr: String): Boolean {
+    fun handleToDateInput(message: Message, fromDateStr: String): Boolean {
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
-        
         val toDate = parseUserDateTime(text, isEndOfRange = true)
         if (toDate == null) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY yoki DD.MM.YYYY HH:mm formatida kiriting (Masalan: 05.01.2026 yoki 05.01.2026 12:00):"
-            )
+            telegramBot.sendMessageBlocking(chatId, text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY yoki DD.MM.YYYY HH:mm formatida kiriting (Masalan: 05.01.2026 yoki 05.01.2026 12:00):")
             return false
         }
-        
         val fromDate = try {
             LocalDateTime.parse(fromDateStr, dateTimeFormatter)
-        } catch (e: DateTimeParseException) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang."
-            )
+        } catch (_: DateTimeParseException) {
+            telegramBot.sendMessageBlocking(chatId, text = "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
-        
         if (toDate.isBefore(fromDate)) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ Tugash sanasi boshlanish sanasidan oldin bo'lishi mumkin emas. Iltimos, qayta kiriting:"
-            )
+            telegramBot.sendMessageBlocking(chatId, text = "❌ Tugash sanasi boshlanish sanasidan oldin bo'lishi mumkin emas. Iltimos, qayta kiriting:")
             return false
         }
-        
         if (toDate.isBefore(LocalDateTime.now())) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, kelajak sanasini kiriting:"
-            )
+            telegramBot.sendMessageBlocking(chatId, text = "❌ Sana o'tgan sanadan bo'lishi mumkin emas. Iltimos, kelajak sanasini kiriting:")
             return false
         }
-        
-        // Save normalized toDate to state and show brand selection
         stateManager.updateToDate(chatId, toDate.format(dateTimeFormatter))
-        
-        showBrandSelection(chatId, stationFromId, stationToId)
-        
+        val rs = stateManager.getRequestState(chatId)
+        showBrandSelection(chatId, rs.stationFromId ?: "", rs.stationToId ?: "")
         return true
     }
     
     fun showBrandSelection(chatId: Long, stationFromId: String, stationToId: String) {
         val requestState = stateManager.getRequestState(chatId)
         val selectedBrandIds = requestState.selectedBrandIds
-        
         val brands = brandRepository.findAllByOrderByDisplayName()
-        val buttonRows = mutableListOf<List<String>>()
-        val callbackDataRows = mutableListOf<List<String>>()
-        
-        // Add brand buttons (2 columns) with checkmarks for selected
-        var currentRow = mutableListOf<String>()
-        var currentCallbackRow = mutableListOf<String>()
-        
-        brands.forEachIndexed { index, brand ->
-            val isSelected = selectedBrandIds.contains(brand.id)
-            val buttonText = if (isSelected) "✅ ${brand.displayName}" else brand.displayName
-            currentRow.add(buttonText)
-            currentCallbackRow.add("toggle_brand_${brand.id}_from_${stationFromId}_to_${stationToId}")
-            
-            if (currentRow.size == 2 || index == brands.size - 1) {
-                buttonRows.add(currentRow.toList())
-                callbackDataRows.add(currentCallbackRow.toList())
-                currentRow = mutableListOf()
-                currentCallbackRow = mutableListOf()
-            }
+        val (buttonRows, callbackDataRows) = buildTwoColumnButtons(brands,
+            { if (selectedBrandIds.contains(it.id)) "✅ ${it.displayName}" else it.displayName },
+            { "toggle_brand_${it.id}_from_${stationFromId}_to_$stationToId" }
+        ).let { (rows, callbacks) ->
+            val (doneBtn, doneCb) = if (selectedBrandIds.isEmpty())
+                listOf("ALL (Barcha brendlar)") to "finish_brand_selection_all_from_${stationFromId}_to_$stationToId"
+            else listOf("✅ Tugatish (${selectedBrandIds.size} tanlangan)") to "finish_brand_selection_from_${stationFromId}_to_$stationToId"
+            (rows + listOf(doneBtn)) to (callbacks + listOf(listOf(doneCb)))
         }
-        
-        // Add "Done" button if at least one brand is selected, or allow "ALL" (no selection)
-        if (selectedBrandIds.isEmpty()) {
-            buttonRows.add(listOf("ALL (Barcha brendlar)"))
-            callbackDataRows.add(listOf("finish_brand_selection_all_from_${stationFromId}_to_${stationToId}"))
-        } else {
-            buttonRows.add(listOf("✅ Tugatish (${selectedBrandIds.size} tanlangan)"))
-            callbackDataRows.add(listOf("finish_brand_selection_from_${stationFromId}_to_${stationToId}"))
-        }
-        
-        val selectedText = if (selectedBrandIds.isEmpty()) {
-            "Hech qanday brend tanlanmagan (ALL)"
-        } else {
-            val selectedBrands = brands.filter { selectedBrandIds.contains(it.id) }
-            selectedBrands.joinToString(", ") { it.displayName }
-        }
-        
+        val selectedText = if (selectedBrandIds.isEmpty()) "Hech qanday brend tanlanmagan (ALL)"
+        else brands.filter { selectedBrandIds.contains(it.id) }.joinToString(", ") { it.displayName }
         telegramBot.sendMessageWithButtonsBlocking(
             chatId = chatId,
             text = """
@@ -503,7 +391,7 @@ class CommandHandler(
         showBrandSelection(chatId, stationFromId, stationToId)
     }
     
-    fun handleFinishBrandSelection(stationFromId: String, stationToId: String, chatId: Long, userId: Long, allBrands: Boolean = false): Boolean {
+    fun handleFinishBrandSelection(stationFromId: String, stationToId: String, chatId: Long): Boolean {
         // Ask for number of people instead of creating request immediately
         telegramBot.sendMessageBlocking(
             chatId = chatId,
@@ -522,38 +410,24 @@ class CommandHandler(
         return true
     }
     
-    fun handleNumberOfPeopleInput(message: Message, userId: Long, stationFromId: String, stationToId: String): Boolean {
+    fun handleNumberOfPeopleInput(message: Message): Boolean {
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
-        
-        val numberOfPeople = try {
-            val num = text.toInt()
-            if (num < 1) {
-                telegramBot.sendMessageBlocking(
-                    chatId = chatId,
-                    text = "❌ Kishi soni kamida 1 bo'lishi kerak. Iltimos, qayta kiriting:"
-                )
+        val numberOfPeople = when (val num = text.toIntOrNull()) {
+            null -> {
+                telegramBot.sendMessageBlocking(chatId, text = "❌ Noto'g'ri format. Iltimos, raqam kiriting (Masalan: 1, 2, 3):")
                 return false
             }
-            if (num > 10) {
-                telegramBot.sendMessageBlocking(
-                    chatId = chatId,
-                    text = "❌ Kishi soni 10 dan oshmasligi kerak. Iltimos, qayta kiriting:"
-                )
+            in 1..10 -> num
+            else -> {
+                telegramBot.sendMessageBlocking(chatId, text = if (num < 1) "❌ Kishi soni kamida 1 bo'lishi kerak. Iltimos, qayta kiriting:" else "❌ Kishi soni 10 dan oshmasligi kerak. Iltimos, qayta kiriting:")
                 return false
             }
-            num
-        } catch (_: NumberFormatException) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ Noto'g'ri format. Iltimos, raqam kiriting (Masalan: 1, 2, 3):"
-            )
-            return false
         }
-        
         stateManager.updateNumberOfPeople(chatId, numberOfPeople)
         stateManager.setState(chatId, uz.aziz.lookingforticket.telegram.state.UserState.WAITING_PRICE_CHOICE)
-        showPriceChoice(chatId, stationFromId, stationToId)
+        val rs = stateManager.getRequestState(chatId)
+        showPriceChoice(chatId, rs.stationFromId ?: "", rs.stationToId ?: "")
         return true
     }
     
@@ -577,11 +451,9 @@ class CommandHandler(
         )
     }
     
-    fun handlePriceChoiceCallback(chatId: Long, userId: Long, choice: String, stationFromId: String, stationToId: String): Boolean {
+    fun handlePriceChoiceCallback(chatId: Long, choice: String, stationFromId: String, stationToId: String): Boolean {
         return when (choice) {
-            "any" -> {
-                createRequestFromState(chatId, userId, stationFromId, stationToId, maxPrice = null)
-            }
+            "any" -> createRequestFromState(chatId, stationFromId, stationToId, maxPrice = null)
             "custom" -> {
                 telegramBot.sendMessageBlocking(
                     chatId = chatId,
@@ -595,7 +467,7 @@ class CommandHandler(
         }
     }
     
-    fun handleMaxPriceInput(message: Message, userId: Long, stationFromId: String, stationToId: String): Boolean {
+    fun handleMaxPriceInput(message: Message, stationFromId: String, stationToId: String): Boolean {
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
         
@@ -623,18 +495,12 @@ class CommandHandler(
             return false
         }
         
-        return createRequestFromState(chatId, userId, stationFromId, stationToId, maxPrice = maxPrice)
+        return createRequestFromState(chatId, stationFromId, stationToId, maxPrice)
     }
-    
+
     /** Creates request from current state; clears state and sends success message. */
-    private fun createRequestFromState(
-        chatId: Long,
-        userId: Long,
-        stationFromId: String,
-        stationToId: String,
-        maxPrice: Long?
-    ): Boolean {
-        val user = userRepository.findById(userId).orElse(null) ?: return false
+    private fun createRequestFromState(chatId: Long, stationFromId: String, stationToId: String, maxPrice: Long?): Boolean {
+        val user = userRepository.findByChatId(chatId) ?: return false
         val stationFrom = stationRepository.findById(stationFromId).orElse(null) ?: return false
         val stationTo = stationRepository.findById(stationToId).orElse(null) ?: return false
         
@@ -708,16 +574,16 @@ class CommandHandler(
         return true
     }
     
+    private fun sendRequestNotFound(chatId: Long) {
+        telegramBot.sendMessageBlocking(chatId, text = "❌ So'rov topilmadi.")
+    }
+
     fun handleKeepRequestActive(requestId: Long, chatId: Long, keepActive: Boolean) {
         val request = requestRepository.findById(requestId).orElse(null)
         if (request == null || request.user.chatId != chatId) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ So'rov topilmadi."
-            )
+            sendRequestNotFound(chatId)
             return
         }
-        
         if (keepActive) {
             // User wants to keep it active - reactivate and reset notification count
             requestRepository.updateIsActive(requestId, true)
@@ -749,13 +615,9 @@ class CommandHandler(
     fun handleReactivateRequest(requestId: Long, chatId: Long) {
         val request = requestRepository.findById(requestId).orElse(null)
         if (request == null || request.user.chatId != chatId) {
-            telegramBot.sendMessageBlocking(
-                chatId = chatId,
-                text = "❌ So'rov topilmadi."
-            )
+            sendRequestNotFound(chatId)
             return
         }
-
         if (request.isActive) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,

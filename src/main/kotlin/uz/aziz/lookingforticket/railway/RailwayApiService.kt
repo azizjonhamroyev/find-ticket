@@ -71,17 +71,16 @@ class RailwayApiService(
                 )
             )
         )
-        return checkTrainAvailabilityWithRequest(request, stationFrom, stationTo, depDate.toString(), userId)
+        return checkTrainAvailabilityWithRequest(request, stationFrom, stationTo, userId)
     }
-    
-    
+
     private fun checkTrainAvailabilityWithRequest(
         request: TrainsListRequest,
         stationFrom: String,
         stationTo: String,
-        dateInfo: String,
         userId: Long? = null
     ): Mono<TrainsListApiResponse> {
+        val dateInfo = request.directions.forward.date
         logger.debug("Checking train availability: $stationFrom -> $stationTo on $dateInfo")
         
         val url = "${railwayProperties.baseUrl}/api/v3/handbook/trains/list"
@@ -179,10 +178,7 @@ class RailwayApiService(
                     userId = userId
                 )
                 if (error is WebClientResponseException && error.statusCode == HttpStatus.TOO_MANY_REQUESTS) {
-                    logger.error(
-                        "Rate limited (429) after ${railwayProperties.maxRetries} retries. " +
-                        "Skipping request: $stationFrom -> $stationTo on $dateInfo"
-                    )
+                    logger.error("Rate limited (429) after ${railwayProperties.maxRetries} retries. Skipping: $stationFrom -> $stationTo on $dateInfo")
                 }
                 Mono.empty()
             }

@@ -99,95 +99,58 @@ class TelegramPollingService(
         
         when {
             data.startsWith("select_station_from_") -> {
-                val stationId = data.removePrefix("select_station_from_")
-                val stationFromId = commandHandler.handleStationFromSelection(stationId, chatId)
+                val stationFromId = commandHandler.handleStationFromSelection(data.removePrefix("select_station_from_"), chatId)
                 if (stationFromId != null) {
                     stateManager.setState(chatId, UserState.WAITING_STATION_TO)
                     stateManager.updateStationFrom(chatId, stationFromId)
                 }
-                // Answer callback query
-                answerCallbackQuery(callbackQuery.id)
             }
             data.startsWith("select_station_to_") -> {
                 val parts = data.removePrefix("select_station_to_").split("_from_")
                 if (parts.size == 2) {
-                    val stationToId = parts[0]
-                    val stationFromId = parts[1]
-                    val result = commandHandler.handleStationToSelection(stationToId, stationFromId, chatId)
+                    val result = commandHandler.handleStationToSelection(parts[0], parts[1], chatId)
                     if (result != null) {
                         stateManager.setState(chatId, UserState.WAITING_FROM_DATE)
                         stateManager.updateStationTo(chatId, result)
                     }
                 }
-                answerCallbackQuery(callbackQuery.id)
             }
             data.startsWith("deactivate_request_") -> {
-                val requestId = data.removePrefix("deactivate_request_").toLongOrNull()
-                if (requestId != null) {
-                    commandHandler.handleKeepRequestActive(requestId, chatId, false)
+                data.removePrefix("deactivate_request_").toLongOrNull()?.let {
+                    commandHandler.handleKeepRequestActive(it, chatId, false)
                 }
-                answerCallbackQuery(callbackQuery.id)
             }
             data.startsWith("reactivate_request_") -> {
-                val requestId = data.removePrefix("reactivate_request_").toLongOrNull()
-                if (requestId != null) {
-                    commandHandler.handleReactivateRequest(requestId, chatId)
+                data.removePrefix("reactivate_request_").toLongOrNull()?.let {
+                    commandHandler.handleReactivateRequest(it, chatId)
                 }
-                answerCallbackQuery(callbackQuery.id)
             }
             data.startsWith("toggle_brand_") -> {
                 val parts = data.removePrefix("toggle_brand_").split("_from_")
                 if (parts.size == 2) {
-                    val brandIdStr = parts[0]
                     val stationPart = parts[1].split("_to_")
                     if (stationPart.size == 2) {
-                        val stationFromId = stationPart[0]
-                        val stationToId = stationPart[1]
-                        val brandId = brandIdStr.toLongOrNull()
-                        if (brandId != null) {
-                            commandHandler.handleBrandToggle(brandId, stationFromId, stationToId, chatId)
+                        parts[0].toLongOrNull()?.let { brandId ->
+                            commandHandler.handleBrandToggle(brandId, stationPart[0], stationPart[1], chatId)
                         }
                     }
                 }
-                answerCallbackQuery(callbackQuery.id)
             }
             data.startsWith("finish_brand_selection") -> {
-                val parts = if (data.contains("_all_")) {
-                    data.removePrefix("finish_brand_selection_all_from_").split("_to_")
-                } else {
-                    data.removePrefix("finish_brand_selection_from_").split("_to_")
-                }
-                if (parts.size == 2) {
-                    val stationFromId = parts[0]
-                    val stationToId = parts[1]
-                    val allBrands = data.contains("_all_")
-                    // Don't clear state here - handleFinishBrandSelection sets it to WAITING_NUMBER_OF_PEOPLE
-                    // State will be cleared after the user enters the number of people
-                    commandHandler.handleFinishBrandSelection(
-                        stationFromId,
-                        stationToId,
-                        chatId,
-                        user.id,
-                        allBrands
-                    )
-                }
-                answerCallbackQuery(callbackQuery.id)
+                val parts = if (data.contains("_all_")) data.removePrefix("finish_brand_selection_all_from_").split("_to_")
+                else data.removePrefix("finish_brand_selection_from_").split("_to_")
+                if (parts.size == 2) commandHandler.handleFinishBrandSelection(parts[0], parts[1], chatId)
             }
             data.startsWith("price_any_from_") -> {
                 val rest = data.removePrefix("price_any_from_").split("_to_")
-                if (rest.size == 2) {
-                    commandHandler.handlePriceChoiceCallback(chatId, user.id, "any", rest[0], rest[1])
-                }
-                answerCallbackQuery(callbackQuery.id)
+                if (rest.size == 2) commandHandler.handlePriceChoiceCallback(chatId, "any", rest[0], rest[1])
             }
             data.startsWith("price_custom_from_") -> {
                 val rest = data.removePrefix("price_custom_from_").split("_to_")
-                if (rest.size == 2) {
-                    commandHandler.handlePriceChoiceCallback(chatId, user.id, "custom", rest[0], rest[1])
-                }
-                answerCallbackQuery(callbackQuery.id)
+                if (rest.size == 2) commandHandler.handlePriceChoiceCallback(chatId, "custom", rest[0], rest[1])
             }
         }
+        answerCallbackQuery(callbackQuery.id)
     }
     
     private fun answerCallbackQuery(callbackQueryId: String) {
@@ -229,51 +192,24 @@ class TelegramPollingService(
             }
             // Handle state-based inputs
             state == UserState.WAITING_FROM_DATE -> {
-                val requestState = stateManager.getRequestState(chatId)
-                if (commandHandler.handleFromDateInput(
-                        message,
-                        user?.id ?: 0L,
-                        requestState.stationFromId ?: "",
-                        requestState.stationToId ?: ""
-                    )
-                ) {
+                val rs = stateManager.getRequestState(chatId)
+                if (commandHandler.handleFromDateInput(message)) {
                     stateManager.setState(chatId, UserState.WAITING_TO_DATE)
                 }
             }
             state == UserState.WAITING_TO_DATE -> {
-                val requestState = stateManager.getRequestState(chatId)
-                if (commandHandler.handleToDateInput(
-                        message,
-                        user?.id ?: 0L,
-                        requestState.stationFromId ?: "",
-                        requestState.stationToId ?: "",
-                        requestState.fromDate ?: ""
-                    )
-                ) {
+                val rs = stateManager.getRequestState(chatId)
+                if (commandHandler.handleToDateInput(message, rs.fromDate ?: "")) {
                     stateManager.setState(chatId, UserState.WAITING_BRAND)
                 }
             }
             state == UserState.WAITING_NUMBER_OF_PEOPLE -> {
-                val requestState = stateManager.getRequestState(chatId)
-                if (commandHandler.handleNumberOfPeopleInput(
-                        message,
-                        user?.id ?: 0L,
-                        requestState.stationFromId ?: "",
-                        requestState.stationToId ?: ""
-                    )
-                ) {
-                    // State set to WAITING_PRICE_CHOICE inside handleNumberOfPeopleInput
-                }
+                val rs = stateManager.getRequestState(chatId)
+                commandHandler.handleNumberOfPeopleInput(message)
             }
             state == UserState.WAITING_MAX_PRICE -> {
-                val requestState = stateManager.getRequestState(chatId)
-                if (commandHandler.handleMaxPriceInput(
-                        message,
-                        user?.id ?: 0L,
-                        requestState.stationFromId ?: "",
-                        requestState.stationToId ?: ""
-                    )
-                ) {
+                val rs = stateManager.getRequestState(chatId)
+                if (commandHandler.handleMaxPriceInput(message, rs.stationFromId ?: "", rs.stationToId ?: "")) {
                     stateManager.clearState(chatId)
                 }
             }
