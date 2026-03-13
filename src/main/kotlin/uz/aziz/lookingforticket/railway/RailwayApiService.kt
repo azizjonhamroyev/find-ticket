@@ -59,7 +59,8 @@ class RailwayApiService(
     fun checkTrainAvailability(
         stationFrom: String,
         stationTo: String,
-        depDate: LocalDate
+        depDate: LocalDate,
+        userId: Long? = null
     ): Mono<TrainsListApiResponse> {
         val request = TrainsListRequest(
             directions = DirectionsRequest(
@@ -70,8 +71,7 @@ class RailwayApiService(
                 )
             )
         )
-        
-        return checkTrainAvailabilityWithRequest(request, stationFrom, stationTo, depDate.toString())
+        return checkTrainAvailabilityWithRequest(request, stationFrom, stationTo, depDate.toString(), userId)
     }
     
     
@@ -79,7 +79,8 @@ class RailwayApiService(
         request: TrainsListRequest,
         stationFrom: String,
         stationTo: String,
-        dateInfo: String
+        dateInfo: String,
+        userId: Long? = null
     ): Mono<TrainsListApiResponse> {
         logger.debug("Checking train availability: $stationFrom -> $stationTo on $dateInfo")
         
@@ -100,9 +101,7 @@ class RailwayApiService(
             append("Origin: ${railwayProperties.baseUrl}\n")
             append("Referer: ${railwayProperties.baseUrl}/uz/home\n")
             append("X-XSRF-TOKEN: ${railwayProperties.xsrfToken}\n")
-            if (railwayProperties.cookie.isNotBlank()) {
-                append("Cookie: ${railwayProperties.cookie}\n")
-            }
+            if (railwayProperties.cookie.isNotBlank()) append("Cookie: ${railwayProperties.cookie}\n")
         }
         
         val requestSpec = webClient.post()
@@ -116,14 +115,9 @@ class RailwayApiService(
             .header("device-type", "BROWSER")
             .header("X-XSRF-TOKEN", railwayProperties.xsrfToken)
             .cookie("XSRF-TOKEN", railwayProperties.xsrfToken)
+            .let { spec -> if (railwayProperties.cookie.isNotBlank()) spec.header("Cookie", railwayProperties.cookie) else spec }
         
-        val finalRequestSpec = if (railwayProperties.cookie.isNotBlank()) {
-            requestSpec.header("Cookie", railwayProperties.cookie)
-        } else {
-            requestSpec
-        }
-        
-        return finalRequestSpec
+        return requestSpec
             .bodyValue(request)
             .retrieve()
             .bodyToMono<TrainsListApiResponse>()
@@ -155,12 +149,7 @@ class RailwayApiService(
             )
             .doOnSuccess { response ->
                 val executionTime = System.currentTimeMillis() - startTime
-                val responseBody = try {
-                    objectMapper.writeValueAsString(response)
-                } catch (e: Exception) {
-                    null
-                }
-                
+                val responseBody = try { objectMapper.writeValueAsString(response) } catch (e: Exception) { null }
                 saveLog(
                     url = url,
                     method = "POST",
@@ -169,33 +158,26 @@ class RailwayApiService(
                     responseStatus = 200,
                     responseBody = responseBody,
                     isSuccess = true,
-                    executionTimeMs = executionTime
+                    executionTimeMs = executionTime,
+                    userId = userId
                 )
             }
-            .doOnError { error ->
+            .onErrorResume { error ->
                 val executionTime = System.currentTimeMillis() - startTime
-                val statusCode = if (error is WebClientResponseException) {
-                    error.statusCode.value()
-                } else {
-                    null
-                }
-                
-                logger.error("Error checking train availability: ${error.message}", error)
-                
+                val (statusCode, errorResponseBody, errorDetail) = buildErrorDetail(error)
+                logger.error("Error checking train availability: $errorDetail", error)
                 saveLog(
                     url = url,
                     method = "POST",
                     requestHeaders = requestHeaders,
                     requestBody = requestBody,
                     responseStatus = statusCode,
-                    responseBody = null,
-                    errorMessage = error.message,
+                    responseBody = errorResponseBody,
+                    errorMessage = errorDetail,
                     isSuccess = false,
-                    executionTimeMs = executionTime
+                    executionTimeMs = executionTime,
+                    userId = userId
                 )
-            }
-            .onErrorResume { error ->
-                // If it's a 429 after all retries, log and return empty
                 if (error is WebClientResponseException && error.statusCode == HttpStatus.TOO_MANY_REQUESTS) {
                     logger.error(
                         "Rate limited (429) after ${railwayProperties.maxRetries} retries. " +
@@ -204,6 +186,21 @@ class RailwayApiService(
                 }
                 Mono.empty()
             }
+    }
+    
+    /** Builds status code, optional response body, and full error message for logging. */
+    private fun buildErrorDetail(error: Throwable): Triple<Int?, String?, String> {
+        val statusCode = (error as? WebClientResponseException)?.statusCode?.value()
+        val responseBody = (error as? WebClientResponseException)?.responseBodyAsString
+        val sb = StringBuilder()
+        sb.append(error.javaClass.simpleName)
+        if (error.message != null) sb.append(": ").append(error.message)
+        if (statusCode != null) sb.append(" [HTTP ").append(statusCode).append("]")
+        if (!responseBody.isNullOrBlank()) {
+            val bodySnippet = if (responseBody.length > 2000) responseBody.take(2000) + "..." else responseBody
+            sb.append(" | response: ").append(bodySnippet)
+        }
+        return Triple(statusCode, responseBody, sb.toString())
     }
     
     /** Parses "25.02.2026 16:00" into date part and time part. */
@@ -227,21 +224,24 @@ class RailwayApiService(
         responseBody: String?,
         errorMessage: String? = null,
         isSuccess: Boolean,
-        executionTimeMs: Long
+        executionTimeMs: Long,
+        userId: Long? = null
     ) {
         try {
-            val log = ApiLogEntity(
-                requestUrl = url,
-                requestMethod = method,
-                requestHeaders = requestHeaders,
-                requestBody = requestBody,
-                responseStatus = responseStatus,
-                responseBody = responseBody,
-                errorMessage = errorMessage,
-                isSuccess = isSuccess,
-                executionTimeMs = executionTimeMs
+            apiLogRepository.save(
+                ApiLogEntity(
+                    requestUrl = url,
+                    requestMethod = method,
+                    requestHeaders = requestHeaders,
+                    requestBody = requestBody,
+                    responseStatus = responseStatus,
+                    responseBody = responseBody,
+                    errorMessage = errorMessage,
+                    isSuccess = isSuccess,
+                    executionTimeMs = executionTimeMs,
+                    userId = userId
+                )
             )
-            apiLogRepository.save(log)
         } catch (e: Exception) {
             logger.error("Error saving API log: ${e.message}", e)
         }
@@ -266,9 +266,10 @@ class RailwayApiService(
         fromDate: LocalDateTime,
         toDate: LocalDateTime,
         minSeats: Int = 1,
-        brandNames: List<String>? = null
+        brandNames: List<String>? = null,
+        userId: Long? = null,
+        maxPrice: Long? = null
     ): Mono<List<TrainInfo>> {
-        // Iterate by calendar day (API is per-day); then filter by timestamp range
         val startDay = fromDate.toLocalDate()
         val endDay = toDate.toLocalDate()
         var currentDay = startDay
@@ -278,30 +279,26 @@ class RailwayApiService(
         while (!currentDay.isAfter(endDay)) {
             val day = currentDay
             val dateMono = if (isFirstRequest) {
-                checkTrainAvailability(stationFrom, stationTo, day)
-                    .map { response -> extractAvailableTrains(response, minSeats, brandNames) }
+                checkTrainAvailability(stationFrom, stationTo, day, userId)
+                    .map { extractAvailableTrains(it, minSeats, brandNames) }
                     .defaultIfEmpty(emptyList())
             } else {
                 Mono.delay(Duration.ofMillis(railwayProperties.delayBetweenRequestsMs))
-                    .then(checkTrainAvailability(stationFrom, stationTo, day))
-                    .map { response -> extractAvailableTrains(response, minSeats, brandNames) }
+                    .then(checkTrainAvailability(stationFrom, stationTo, day, userId))
+                    .map { extractAvailableTrains(it, minSeats, brandNames) }
                     .defaultIfEmpty(emptyList())
             }
-            
-            combinedMono = combinedMono.flatMap { existingTrains ->
-                dateMono.map { newTrains ->
-                    (existingTrains + newTrains).distinctBy { it.trainNumber }
-                }
+            combinedMono = combinedMono.flatMap { existing ->
+                dateMono.map { new -> (existing + new).distinctBy { it.trainNumber } }
             }
-            
             currentDay = currentDay.plusDays(1)
             isFirstRequest = false
         }
-        
-        // Filter to trains whose departure is within [fromDate, toDate] (timestamp range)
-        return combinedMono.map { trains ->
-            trains.filter { isTrainDepartureInRange(it, fromDate, toDate) }
-        }
+        return combinedMono
+            .map { trains -> trains.filter { isTrainDepartureInRange(it, fromDate, toDate) } }
+            .map { trains ->
+                if (maxPrice != null) trains.filter { it.minTariff <= maxPrice } else trains
+            }
     }
     
     private fun extractAvailableTrains(

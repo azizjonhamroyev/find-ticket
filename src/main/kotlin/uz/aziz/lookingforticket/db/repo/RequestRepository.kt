@@ -40,5 +40,8 @@ interface RequestRepository : JpaRepository<RequestEntity, Long> {
     @Transactional
     @Query("UPDATE RequestEntity r SET r.notificationCount = 0 WHERE r.id = :id")
     fun resetNotificationCount(@Param("id") id: Long)
+
+    @Query("SELECT r FROM RequestEntity r WHERE r.user.id = :userId ORDER BY r.createdAt DESC")
+    fun findByUserIdOrderByCreatedAtDesc(@Param("userId") userId: Long): List<RequestEntity>
 }
 

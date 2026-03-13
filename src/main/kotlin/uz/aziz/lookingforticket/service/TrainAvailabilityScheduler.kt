@@ -12,7 +12,6 @@ import uz.aziz.lookingforticket.db.entity.RequestEntity
 import uz.aziz.lookingforticket.railway.RailwayApiService
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import java.time.Duration
-import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Service
@@ -131,10 +130,12 @@ class TrainAvailabilityScheduler(
                 railwayApiService.getAvailableTrainsWithSeatsForDateRange(
                     stationFrom = request.stationFrom.id,
                     stationTo = request.stationTo.id,
-                    fromDate = effectiveFromDate, // Use adjusted from_date
+                    fromDate = effectiveFromDate,
                     toDate = request.toDate,
                     minSeats = request.minSeats,
-                    brandNames = brandNames
+                    brandNames = brandNames,
+                    userId = request.user.id,
+                    maxPrice = request.maxPrice
                 )
                 .timeout(Duration.ofSeconds(30))
                 .map { trains -> Pair(trains, brandNames)

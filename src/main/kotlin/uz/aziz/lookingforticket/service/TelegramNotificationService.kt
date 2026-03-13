@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import reactor.core.publisher.Mono
 import uz.aziz.lookingforticket.railway.model.TrainInfo
 import uz.aziz.lookingforticket.telegram.TelegramBot
+import java.time.Duration
 
 @Service
 class TelegramNotificationService(
@@ -22,8 +23,8 @@ class TelegramNotificationService(
         val message = buildTrainAvailabilityMessage(trains, requestId)
         
         return telegramBot.sendMessage(chatId, message, "HTML")
+            .timeout(Duration.ofSeconds(30))
             .flatMap { result ->
-                // Log the message
                 Mono.fromCallable {
                     messageLogService.logMessage(
                         chatId = chatId,
@@ -38,6 +39,42 @@ class TelegramNotificationService(
                 }
                 .thenReturn(Unit)
             }
+            .onErrorResume { error ->
+                val detail = buildSendErrorDetail(error)
+                logger.error("Failed to send train availability message to chat $chatId: $detail", error)
+                Mono.fromCallable {
+                    messageLogService.logMessage(
+                        chatId = chatId,
+                        messageText = message,
+                        messageType = "TRAIN_AVAILABILITY",
+                        requestId = requestId,
+                        hasButtons = false,
+                        isSuccess = false,
+                        errorMessage = detail,
+                        telegramMessageId = null
+                    )
+                }
+                .then(Mono.empty<Unit>())
+            }
+    }
+    
+    private fun buildSendErrorDetail(error: Throwable): String {
+        val sb = StringBuilder()
+        sb.append(error.javaClass.simpleName)
+        if (error.message != null) sb.append(": ").append(error.message)
+        val ex = error as? org.springframework.web.reactive.function.client.WebClientResponseException
+        if (ex != null) {
+            sb.append(" [HTTP ").append(ex.statusCode.value()).append("]")
+            val body = ex.responseBodyAsString
+            if (!body.isNullOrBlank()) {
+                val snippet = if (body.length > 1500) body.take(1500) + "..." else body
+                sb.append(" | response: ").append(snippet)
+            }
+        }
+        error.cause?.let { cause ->
+            sb.append(" | cause: ").append(cause.javaClass.simpleName).append(": ").append(cause.message)
+        }
+        return sb.toString()
     }
     
     private fun buildTrainAvailabilityMessage(trains: List<TrainInfo>, requestId: Long): String {
@@ -84,29 +121,42 @@ class TelegramNotificationService(
         return telegramBot.sendMessageWithButtons(
             chatId = chatId,
             text = message,
-            buttons = listOf(
-                listOf("Ha")
-            ),
-            callbackData = listOf(
-                listOf("deactivate_request_$requestId")
-            )
+            buttons = listOf(listOf("Ha")),
+            callbackData = listOf(listOf("deactivate_request_$requestId"))
         )
-        .flatMap { result ->
-            // Log the message
-            Mono.fromCallable {
-                messageLogService.logMessage(
-                    chatId = chatId,
-                    messageText = message,
-                    messageType = "DEACTIVATE_REQUEST",
-                    requestId = requestId,
-                    hasButtons = true,
-                    isSuccess = result.isSuccess,
-                    errorMessage = result.errorMessage,
-                    telegramMessageId = result.telegramMessageId
-                )
+            .timeout(Duration.ofSeconds(30))
+            .flatMap { result ->
+                Mono.fromCallable {
+                    messageLogService.logMessage(
+                        chatId = chatId,
+                        messageText = message,
+                        messageType = "DEACTIVATE_REQUEST",
+                        requestId = requestId,
+                        hasButtons = true,
+                        isSuccess = result.isSuccess,
+                        errorMessage = result.errorMessage,
+                        telegramMessageId = result.telegramMessageId
+                    )
+                }
+                .thenReturn(Unit)
             }
-            .thenReturn(Unit)
-        }
+            .onErrorResume { error ->
+                val detail = buildSendErrorDetail(error)
+                logger.error("Failed to send deactivate request message to chat $chatId: $detail", error)
+                Mono.fromCallable {
+                    messageLogService.logMessage(
+                        chatId = chatId,
+                        messageText = message,
+                        messageType = "DEACTIVATE_REQUEST",
+                        requestId = requestId,
+                        hasButtons = true,
+                        isSuccess = false,
+                        errorMessage = detail,
+                        telegramMessageId = null
+                    )
+                }
+                .then(Mono.empty<Unit>())
+            }
     }
 }
 

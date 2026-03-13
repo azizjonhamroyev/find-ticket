@@ -65,5 +65,10 @@ class UserStateManager {
         val current = getRequestState(userId)
         setRequestState(userId, current.copy(numberOfPeople = numberOfPeople))
     }
+    
+    fun updateMaxPrice(userId: Long, maxPrice: Long?) {
+        val current = getRequestState(userId)
+        setRequestState(userId, current.copy(maxPrice = maxPrice))
+    }
 }
 

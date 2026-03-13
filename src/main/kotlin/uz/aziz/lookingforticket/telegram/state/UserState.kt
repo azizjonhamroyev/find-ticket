@@ -7,7 +7,9 @@ enum class UserState {
     WAITING_FROM_DATE,
     WAITING_TO_DATE,
     WAITING_BRAND,
-    WAITING_NUMBER_OF_PEOPLE
+    WAITING_NUMBER_OF_PEOPLE,
+    WAITING_PRICE_CHOICE,
+    WAITING_MAX_PRICE
 }
 
 data class RequestCreationState(
@@ -16,6 +18,7 @@ data class RequestCreationState(
     val fromDate: String? = null,
     val toDate: String? = null,
     val selectedBrandIds: MutableSet<Long> = mutableSetOf(),
-    val numberOfPeople: Int? = null
+    val numberOfPeople: Int? = null,
+    val maxPrice: Long? = null
 )
 

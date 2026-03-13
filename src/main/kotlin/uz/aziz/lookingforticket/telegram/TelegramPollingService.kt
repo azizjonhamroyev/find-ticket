@@ -128,6 +128,13 @@ class TelegramPollingService(
                 }
                 answerCallbackQuery(callbackQuery.id)
             }
+            data.startsWith("reactivate_request_") -> {
+                val requestId = data.removePrefix("reactivate_request_").toLongOrNull()
+                if (requestId != null) {
+                    commandHandler.handleReactivateRequest(requestId, chatId)
+                }
+                answerCallbackQuery(callbackQuery.id)
+            }
             data.startsWith("toggle_brand_") -> {
                 val parts = data.removePrefix("toggle_brand_").split("_from_")
                 if (parts.size == 2) {
@@ -166,6 +173,20 @@ class TelegramPollingService(
                 }
                 answerCallbackQuery(callbackQuery.id)
             }
+            data.startsWith("price_any_from_") -> {
+                val rest = data.removePrefix("price_any_from_").split("_to_")
+                if (rest.size == 2) {
+                    commandHandler.handlePriceChoiceCallback(chatId, user.id, "any", rest[0], rest[1])
+                }
+                answerCallbackQuery(callbackQuery.id)
+            }
+            data.startsWith("price_custom_from_") -> {
+                val rest = data.removePrefix("price_custom_from_").split("_to_")
+                if (rest.size == 2) {
+                    commandHandler.handlePriceChoiceCallback(chatId, user.id, "custom", rest[0], rest[1])
+                }
+                answerCallbackQuery(callbackQuery.id)
+            }
         }
     }
     
@@ -193,16 +214,16 @@ class TelegramPollingService(
         val state = stateManager.getState(chatId)
         
         when {
-            // Handle commands
+            // Handle commands (also support localized button labels)
             text == "/start" -> {
                 commandHandler.handleStartCommand(message)
                 stateManager.clearState(chatId)
             }
-            text == "/new_request" -> {
+            text == "/new_request" || text == "Yangi so'rov yaratish" -> {
                 commandHandler.handleNewRequestCommand(message)
                 stateManager.setState(chatId, UserState.WAITING_STATION_FROM)
             }
-            text == "/my_requests" -> {
+            text == "/my_requests" || text == "Mening so'rovlarim" -> {
                 commandHandler.handleMyRequestsCommand(message)
                 stateManager.clearState(chatId)
             }
@@ -235,6 +256,18 @@ class TelegramPollingService(
             state == UserState.WAITING_NUMBER_OF_PEOPLE -> {
                 val requestState = stateManager.getRequestState(chatId)
                 if (commandHandler.handleNumberOfPeopleInput(
+                        message,
+                        user?.id ?: 0L,
+                        requestState.stationFromId ?: "",
+                        requestState.stationToId ?: ""
+                    )
+                ) {
+                    // State set to WAITING_PRICE_CHOICE inside handleNumberOfPeopleInput
+                }
+            }
+            state == UserState.WAITING_MAX_PRICE -> {
+                val requestState = stateManager.getRequestState(chatId)
+                if (commandHandler.handleMaxPriceInput(
                         message,
                         user?.id ?: 0L,
                         requestState.stationFromId ?: "",

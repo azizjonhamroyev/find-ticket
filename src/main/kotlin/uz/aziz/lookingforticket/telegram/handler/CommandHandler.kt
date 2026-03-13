@@ -31,7 +31,34 @@ class CommandHandler(
 ) {
     
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy H:mm")
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy H:mm")
+    private val dateFormatterOnly = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    
+    /**
+     * Parses user input for date/time.
+     * Supports:
+     * - "dd.MM.yyyy HH:mm"
+     * - "dd.MM.yyyy" (start of day for from-date, end of day for to-date).
+     */
+    private fun parseUserDateTime(input: String, isEndOfRange: Boolean): LocalDateTime? {
+        val text = input.trim()
+        // Try full datetime first
+        try {
+            return LocalDateTime.parse(text, dateTimeFormatter)
+        } catch (_: DateTimeParseException) {
+            // Fallback: date-only
+        }
+        return try {
+            val date = LocalDate.parse(text, dateFormatterOnly)
+            if (isEndOfRange) {
+                date.atTime(23, 59)
+            } else {
+                date.atStartOfDay()
+            }
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
     
     fun handleStartCommand(message: Message) {
         val chat = message.chat
@@ -43,15 +70,14 @@ class CommandHandler(
         
         if (existingUser != null) {
             logger.info("User with chatId $chatId already exists")
-            telegramBot.sendMessageBlocking(
+            telegramBot.sendMessageWithMainMenuBlocking(
                 chatId = chatId,
                 text = """
                     👋 <b>Assalomu alaykum!</b>
                     
                     Siz allaqachon ro'yxatdan o'tgansiz.
                     
-                    /new_request - Yangi so'rov yaratish
-                    /my_requests - Mening so'rovlarim
+                    Pastdagi tugmalar yordamida so'rovlarni boshqaring.
                 """.trimIndent(),
                 parseMode = "HTML"
             )
@@ -71,29 +97,29 @@ class CommandHandler(
             )
             return
         }
-        
-        val activeRequests = requestRepository.findByUserIdAndIsActiveTrue(user.id)
-        
-        if (activeRequests.isEmpty()) {
-            telegramBot.sendMessageBlocking(
+        val allRequests = requestRepository.findByUserIdOrderByCreatedAtDesc(user.id)
+        if (allRequests.isEmpty()) {
+            telegramBot.sendMessageWithMainMenuBlocking(
                 chatId = chatId,
                 text = """
                     📋 <b>Mening so'rovlarim</b>
                     
                     Hozirda faol so'rovlar mavjud emas.
-                    
-                    /new_request - Yangi so'rov yaratish
                 """.trimIndent(),
                 parseMode = "HTML"
             )
             return
         }
+
+        val (activeRequests, inactiveRequests) = allRequests.partition { it.isActive }
         
         val messageText = buildString {
-            append("📋 <b>Mening faol so'rovlarim</b>\n\n")
-            append("Jami: <b>${activeRequests.size}</b> ta so'rov\n\n")
-            append("━━━━━━━━━━━━━━━━━━━━\n\n")
-            
+            append("📋 <b>Mening so'rovlarim</b>\n\n")
+            append("Faol: <b>${activeRequests.size}</b> ta\n")
+            append("Nofaol: <b>${inactiveRequests.size}</b> ta\n\n")
+            if (activeRequests.isNotEmpty()) {
+                append("━━━━━━━━ Faol so'rovlar ━━━━━━━━\n\n")
+            }
             activeRequests.forEachIndexed { index, request ->
                 // Get brands for this request
                 val requestBrands = requestBrandRepository.findByRequestId(request.id)
@@ -109,9 +135,10 @@ class CommandHandler(
                 
                 append("📋 <b>So'rov №${request.id}</b>\n")
                 append("📍 ${request.stationFrom.name} → ${request.stationTo.name}\n")
-                append("📅 ${request.fromDate.format(dateFormatter)} - ${request.toDate.format(dateFormatter)}\n")
+                append("📅 ${request.fromDate.format(dateTimeFormatter)} - ${request.toDate.format(dateTimeFormatter)}\n")
                 append("🚂 Brendlar: $brandText\n")
                 append("👥 Kishi soni: ${request.minSeats}\n")
+                append("💰 Narx: ${if (request.maxPrice == null) "Har qanday" else "Maks. ${String.format("%,d", request.maxPrice)} so'm"}\n")
                 append("📊 Xabarlar soni: ${request.notificationCount}/2\n")
                 
                 if (lastCheckedAt != null) {
@@ -124,18 +151,75 @@ class CommandHandler(
                 
                 val statusEmoji = if (request.isActive) "✅" else "❌"
                 append("$statusEmoji Holat: ${if (request.isActive) "Faol" else "Nofaol"}\n")
-                
                 if (index < activeRequests.size - 1) {
-                    append("\n━━━━━━━━━━━━━━━━━━━━\n\n")
+                    append("\n──────────\n\n")
+                } else {
+                    append("\n")
+                }
+            }
+
+            if (inactiveRequests.isNotEmpty()) {
+                if (activeRequests.isNotEmpty()) {
+                    append("\n")
+                }
+                append("━━━━━━━━ Nofaol so'rovlar ━━━━━━━━\n\n")
+                inactiveRequests.forEachIndexed { index, request ->
+                    val requestBrands = requestBrandRepository.findByRequestId(request.id)
+                    val brandText = if (requestBrands.isEmpty()) {
+                        "Barcha brendlar"
+                    } else {
+                        requestBrands.joinToString(", ") { it.brand.displayName }
+                    }
+                    val lastCheckedAt = request.lastCheckedAt
+                    val lastNotifiedAt = request.lastNotifiedAt
+
+                    append("📋 <b>So'rov №${request.id}</b>\n")
+                    append("📍 ${request.stationFrom.name} → ${request.stationTo.name}\n")
+                    append("📅 ${request.fromDate.format(dateTimeFormatter)} - ${request.toDate.format(dateTimeFormatter)}\n")
+                    append("🚂 Brendlar: $brandText\n")
+                    append("👥 Kishi soni: ${request.minSeats}\n")
+                    append("💰 Narx: ${if (request.maxPrice == null) "Har qanday" else "Maks. ${String.format("%,d", request.maxPrice)} so'm"}\n")
+                    append("📊 Xabarlar soni: ${request.notificationCount}/2\n")
+
+                    if (lastCheckedAt != null) {
+                        append("🕐 Oxirgi tekshiruv: ${formatDateTime(lastCheckedAt)}\n")
+                    }
+                    if (lastNotifiedAt != null) {
+                        append("📬 Oxirgi xabar: ${formatDateTime(lastNotifiedAt)}\n")
+                    }
+                    append("❌ Holat: Nofaol\n")
+
+                    if (index < inactiveRequests.size - 1) {
+                        append("\n──────────\n\n")
+                    } else {
+                        append("\n")
+                    }
                 }
             }
         }
-        
-        telegramBot.sendMessageBlocking(
-            chatId = chatId,
-            text = messageText,
-            parseMode = "HTML"
-        )
+
+        // Add inline buttons to reactivate inactive requests (if any)
+        if (inactiveRequests.isEmpty()) {
+            telegramBot.sendMessageWithMainMenuBlocking(
+                chatId = chatId,
+                text = messageText,
+                parseMode = "HTML"
+            )
+        } else {
+            val buttons = mutableListOf<List<String>>()
+            val callbackDataRows = mutableListOf<List<String>>()
+            inactiveRequests.forEach { request ->
+                buttons.add(listOf("♻️ So'rov #${request.id}ni faollashtirish"))
+                callbackDataRows.add(listOf("reactivate_request_${request.id}"))
+            }
+            telegramBot.sendMessageWithButtonsBlocking(
+                chatId = chatId,
+                text = messageText,
+                buttons = buttons,
+                callbackData = callbackDataRows,
+                parseMode = "HTML"
+            )
+        }
     }
     
     private fun formatDateTime(dateTime: LocalDateTime): String {
@@ -271,12 +355,11 @@ class CommandHandler(
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
         
-        val fromDate = try {
-            LocalDateTime.parse(text, dateFormatter)
-        } catch (e: DateTimeParseException) {
+        val fromDate = parseUserDateTime(text, isEndOfRange = false)
+        if (fromDate == null) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
-                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY HH:mm formatida kiriting (Masalan: 31.12.2025 12:00):"
+                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY yoki DD.MM.YYYY HH:mm formatida kiriting (Masalan: 31.12.2025 yoki 31.12.2025 12:00):"
             )
             return false
         }
@@ -289,16 +372,16 @@ class CommandHandler(
             return false
         }
         
-        // Save fromDate to state
-        stateManager.updateFromDate(chatId, text)
+        // Save normalized fromDate to state
+        stateManager.updateFromDate(chatId, fromDate.format(dateTimeFormatter))
         
         telegramBot.sendMessageBlocking(
             chatId = chatId,
             text = """
-                ✅ Boshlanish sanasi: <b>${fromDate.format(dateFormatter)}</b>
+                ✅ Boshlanish sanasi: <b>${fromDate.format(dateTimeFormatter)}</b>
                 
-                📅 Iltimos, jo'nash sanasining tugash sanasini kiriting (format: DD.MM.YYYY HH:mm):
-                (Masalan: 05.01.2026 12:00)
+                📅 Iltimos, jo'nash sanasining tugash sanasini kiriting (format: DD.MM.YYYY yoki DD.MM.YYYY HH:mm):
+                (Masalan: 05.01.2026 yoki 05.01.2026 12:00)
             """.trimIndent(),
             parseMode = "HTML"
         )
@@ -310,18 +393,17 @@ class CommandHandler(
         val chatId = message.chat.id
         val text = message.text?.trim() ?: return false
         
-        val toDate = try {
-            LocalDateTime.parse(text, dateFormatter)
-        } catch (e: DateTimeParseException) {
+        val toDate = parseUserDateTime(text, isEndOfRange = true)
+        if (toDate == null) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
-                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY HH:mm formatida kiriting (Masalan: 05.01.2026 12:00):"
+                text = "❌ Noto'g'ri sana formati. Iltimos, DD.MM.YYYY yoki DD.MM.YYYY HH:mm formatida kiriting (Masalan: 05.01.2026 yoki 05.01.2026 12:00):"
             )
             return false
         }
         
         val fromDate = try {
-            LocalDateTime.parse(fromDateStr, dateFormatter)
+            LocalDateTime.parse(fromDateStr, dateTimeFormatter)
         } catch (e: DateTimeParseException) {
             telegramBot.sendMessageBlocking(
                 chatId = chatId,
@@ -346,8 +428,8 @@ class CommandHandler(
             return false
         }
         
-        // Save toDate to state and show brand selection
-        stateManager.updateToDate(chatId, toDate.format(dateFormatter))
+        // Save normalized toDate to state and show brand selection
+        stateManager.updateToDate(chatId, toDate.format(dateTimeFormatter))
         
         showBrandSelection(chatId, stationFromId, stationToId)
         
@@ -469,10 +551,89 @@ class CommandHandler(
             return false
         }
         
-        // Save number of people to state
         stateManager.updateNumberOfPeople(chatId, numberOfPeople)
+        stateManager.setState(chatId, uz.aziz.lookingforticket.telegram.state.UserState.WAITING_PRICE_CHOICE)
+        showPriceChoice(chatId, stationFromId, stationToId)
+        return true
+    }
+    
+    private fun showPriceChoice(chatId: Long, stationFromId: String, stationToId: String) {
+        telegramBot.sendMessageWithButtonsBlocking(
+            chatId = chatId,
+            text = """
+                💰 Narx filtri:
+                
+                Tanlang:
+                • <b>Har qanday narx</b> – barcha narxlardagi poyezdlar
+                • <b>Maksimal narx</b> – faqat siz ko'rsatgan narxdan arzonroq/o'rinli poyezdlar
+            """.trimIndent(),
+            buttons = listOf(
+                listOf("Har qanday narx", "Maksimal narx")
+            ),
+            callbackData = listOf(
+                listOf("price_any_from_${stationFromId}_to_$stationToId", "price_custom_from_${stationFromId}_to_$stationToId")
+            ),
+            parseMode = "HTML"
+        )
+    }
+    
+    fun handlePriceChoiceCallback(chatId: Long, userId: Long, choice: String, stationFromId: String, stationToId: String): Boolean {
+        return when (choice) {
+            "any" -> {
+                createRequestFromState(chatId, userId, stationFromId, stationToId, maxPrice = null)
+            }
+            "custom" -> {
+                telegramBot.sendMessageBlocking(
+                    chatId = chatId,
+                    text = "💰 Iltimos, maksimal narxni so'mda kiriting (masalan: 500000):",
+                    parseMode = "HTML"
+                )
+                stateManager.setState(chatId, uz.aziz.lookingforticket.telegram.state.UserState.WAITING_MAX_PRICE)
+                true
+            }
+            else -> false
+        }
+    }
+    
+    fun handleMaxPriceInput(message: Message, userId: Long, stationFromId: String, stationToId: String): Boolean {
+        val chatId = message.chat.id
+        val text = message.text?.trim() ?: return false
         
-        // Now create the request
+        val maxPrice = try {
+            val value = text.replace(" ", "").toLongOrNull()
+            when {
+                value == null -> {
+                    telegramBot.sendMessageBlocking(
+                        chatId = chatId,
+                        text = "❌ Noto'g'ri format. Iltimos, raqam kiriting (masalan: 500000):"
+                    )
+                    return false
+                }
+                value <= 0 -> {
+                    telegramBot.sendMessageBlocking(
+                        chatId = chatId,
+                        text = "❌ Narx 0 dan katta bo'lishi kerak. Iltimos, qayta kiriting:"
+                    )
+                    return false
+                }
+                else -> value
+            }
+        } catch (_: Exception) {
+            telegramBot.sendMessageBlocking(chatId, "❌ Xatolik. Iltimos, raqam kiriting.")
+            return false
+        }
+        
+        return createRequestFromState(chatId, userId, stationFromId, stationToId, maxPrice = maxPrice)
+    }
+    
+    /** Creates request from current state; clears state and sends success message. */
+    private fun createRequestFromState(
+        chatId: Long,
+        userId: Long,
+        stationFromId: String,
+        stationToId: String,
+        maxPrice: Long?
+    ): Boolean {
         val user = userRepository.findById(userId).orElse(null) ?: return false
         val stationFrom = stationRepository.findById(stationFromId).orElse(null) ?: return false
         val stationTo = stationRepository.findById(stationToId).orElse(null) ?: return false
@@ -480,23 +641,22 @@ class CommandHandler(
         val requestState = stateManager.getRequestState(chatId)
         val fromDateStr = requestState.fromDate ?: return false
         val toDateStr = requestState.toDate ?: return false
+        val numberOfPeople = requestState.numberOfPeople ?: return false
         
-        // Parse dates
         val fromDate = try {
-            LocalDateTime.parse(fromDateStr, dateFormatter)
+            LocalDateTime.parse(fromDateStr, dateTimeFormatter)
         } catch (_: Exception) {
             telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
         
         val toDate = try {
-            LocalDateTime.parse(toDateStr, dateFormatter)
+            LocalDateTime.parse(toDateStr, dateTimeFormatter)
         } catch (_: Exception) {
             telegramBot.sendMessageBlocking(chatId, "❌ Xatolik yuz berdi. Iltimos, qaytadan boshlang.")
             return false
         }
         
-        // Get selected brands
         val selectedBrandIds = requestState.selectedBrandIds
         
         val request = RequestEntity(
@@ -507,35 +667,22 @@ class CommandHandler(
             toDate = toDate,
             createdAt = LocalDateTime.now(),
             isActive = true,
-            minSeats = numberOfPeople, // Use number of people as minSeats
+            minSeats = numberOfPeople,
+            maxPrice = maxPrice,
             notificationCount = 0
         )
         
         val savedRequest = requestRepository.save(request)
         
-        // Save selected brands
         if (selectedBrandIds.isNotEmpty()) {
-            val brands = brandRepository.findAllById(selectedBrandIds)
-            brands.forEach { brand ->
-                val requestBrand = RequestBrandEntity(
-                    request = savedRequest,
-                    brand = brand
-                )
-                requestBrandRepository.save(requestBrand)
+            brandRepository.findAllById(selectedBrandIds).forEach { brand ->
+                requestBrandRepository.save(RequestBrandEntity(request = savedRequest, brand = brand))
             }
         }
         
-        val brands = if (selectedBrandIds.isEmpty()) {
-            emptyList<BrandEntity>()
-        } else {
-            brandRepository.findAllById(selectedBrandIds)
-        }
-        
-        val brandText = if (brands.isEmpty()) {
-            "Barcha brendlar"
-        } else {
-            brands.joinToString(", ") { it.displayName }
-        }
+        val brands = if (selectedBrandIds.isEmpty()) emptyList<BrandEntity>() else brandRepository.findAllById(selectedBrandIds)
+        val brandText = if (brands.isEmpty()) "Barcha brendlar" else brands.joinToString(", ") { it.displayName }
+        val priceText = if (maxPrice == null) "Har qanday narx" else "Maks. ${String.format("%,d", maxPrice)} so'm"
         
         telegramBot.sendMessageBlocking(
             chatId = chatId,
@@ -544,18 +691,20 @@ class CommandHandler(
                 
                 📋 So'rov №${savedRequest.id}
                 📍 ${stationFrom.name} → ${stationTo.name}
-                📅 ${fromDate.format(dateFormatter)} - ${toDate.format(dateFormatter)}
+                📅 ${fromDate.format(dateTimeFormatter)} - ${toDate.format(dateTimeFormatter)}
                 🚂 Brendlar: $brandText
                 👥 Kishi soni: <b>$numberOfPeople</b>
+                💰 Narx: $priceText
                 
-                Endi biz sizga kamida <b>$numberOfPeople</b> ta bo'sh o'rindiq mavjud bo'lganda xabar beramiz!
+                Endi biz sizga shartlarga mos poyezdlar mavjud bo'lganda xabar beramiz!
                 
                 /my_requests - Mening so'rovlarim
             """.trimIndent(),
             parseMode = "HTML"
         )
         
-        logger.info("Created new request ${savedRequest.id} for user ${user.id} with $numberOfPeople people")
+        logger.info("Created new request ${savedRequest.id} for user ${user.id}, maxPrice=$maxPrice")
+        stateManager.clearState(chatId)
         return true
     }
     
@@ -596,6 +745,37 @@ class CommandHandler(
             )
         }
     }
+
+    fun handleReactivateRequest(requestId: Long, chatId: Long) {
+        val request = requestRepository.findById(requestId).orElse(null)
+        if (request == null || request.user.chatId != chatId) {
+            telegramBot.sendMessageBlocking(
+                chatId = chatId,
+                text = "❌ So'rov topilmadi."
+            )
+            return
+        }
+
+        if (request.isActive) {
+            telegramBot.sendMessageBlocking(
+                chatId = chatId,
+                text = "ℹ️ So'rov #$requestId allaqachon faol."
+            )
+            return
+        }
+
+        requestRepository.updateIsActive(requestId, true)
+        requestRepository.resetNotificationCount(requestId)
+        telegramBot.sendMessageWithMainMenuBlocking(
+            chatId = chatId,
+            text = """
+                ✅ So'rov #$requestId qayta faollashtirildi.
+                
+                Endi bu so'rov bo'yicha yana tekshiruvlar amalga oshiriladi.
+            """.trimIndent(),
+            parseMode = "HTML"
+        )
+    }
     
     private fun createNewUser(chat: uz.aziz.lookingforticket.telegram.dto.response.Chat) {
         val newUser = UserEntity(
@@ -609,17 +789,14 @@ class CommandHandler(
         val savedUser = userRepository.save(newUser)
         logger.info("Created new user with id ${savedUser.id} and chatId ${chat.id}")
         
-        telegramBot.sendMessageBlocking(
+        telegramBot.sendMessageWithMainMenuBlocking(
             chatId = chat.id,
             text = """
                 👋 <b>Assalomu alaykum!</b>
                 
                 Poyezd chiptalarini izlash botiga xush kelibsiz!
                 
-                Botdan foydalanish uchun so'rov yuboring va biz sizga bo'sh o'rindiqlar mavjud bo'lganda xabar beramiz.
-                
-                /new_request - Yangi so'rov yaratish
-                /help - Yordam olish
+                Pastdagi tugmalar yordamida yangi so'rov yarating yoki mavjud so'rovlaringizni ko'ring.
             """.trimIndent(),
             parseMode = "HTML"
         )

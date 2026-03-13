@@ -38,6 +38,10 @@ data class RequestEntity(
     @Column(name = "min_seats")
     val minSeats: Int = 1,
     
+    /** Null = any price; non-null = max price in so'm (only trains where minTariff <= maxPrice). */
+    @Column(name = "max_price")
+    val maxPrice: Long? = null,
+    
     @Column(name = "last_checked_at")
     var lastCheckedAt: LocalDateTime? = null,
     
