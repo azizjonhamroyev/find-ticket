@@ -179,7 +179,7 @@ class CommandHandler(
             }
         }
 
-        // Add inline buttons to deactivate / reactivate requests
+        // Add inline buttons to deactivate / reactivate each request individually
         val buttons = mutableListOf<List<String>>()
         val callbackDataRows = mutableListOf<List<String>>()
         activeRequests.forEach { request ->

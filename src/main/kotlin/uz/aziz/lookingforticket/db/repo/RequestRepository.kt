@@ -15,7 +15,7 @@ interface RequestRepository : JpaRepository<RequestEntity, Long> {
     
     @Query("SELECT r FROM RequestEntity r WHERE r.user.id = :userId AND r.isActive = true")
     fun findByUserIdAndIsActiveTrue(@Param("userId") userId: Long): List<RequestEntity>
-    
+
     @Modifying
     @Transactional
     @Query("UPDATE RequestEntity r SET r.lastCheckedAt = :checkedAt WHERE r.id = :id")
