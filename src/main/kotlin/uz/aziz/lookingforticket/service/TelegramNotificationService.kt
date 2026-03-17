@@ -82,6 +82,7 @@ class TelegramNotificationService(
         sb.append("🎫 <b>Yangi joylar mavjud!</b>\n\n")
         sb.append("So'rovingiz: <b>#$requestId</b>\n")
         sb.append("Topilgan poyezdlar soni: <b>${trains.size}</b>\n\n")
+        sb.append("<a href=\"https://eticket.railway.uz/en/home\">eticket.railway.uz</a>\n\n")
         sb.append("━━━━━━━━━━━━━━━━━━━━\n\n")
         
         trains.forEachIndexed { index, train ->
