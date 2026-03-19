@@ -24,7 +24,7 @@ class TrainAvailabilityScheduler(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     
-    @Scheduled(cron = "0 * * * * ?")
+    @Scheduled(cron = "*/30 * * * * *")
     fun checkTrainAvailability() {
         logger.debug("Starting scheduled train availability check")
         
