@@ -51,3 +51,11 @@ kotlin {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+tasks.register<Copy>("copyDependencies") {
+    from(configurations.runtimeClasspath)
+    into("build/libs/lib")
+}
+
+tasks.named("build") {
+    dependsOn("copyDependencies")
+}
